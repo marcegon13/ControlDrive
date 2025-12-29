@@ -1,0 +1,73 @@
+{
+  "expo": {
+    "name": "Control Driver TEST",
+    "slug": "control-driver-test",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "cover",
+      "backgroundColor": "#2c3e50"
+    },
+    "android": {
+      "package": "com.marce013.controldriver.test",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#2c3e50"
+      },
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_LOCATION",
+        "USE_BIOMETRIC",
+        "USE_FINGERPRINT",
+        "WAKE_LOCK"
+      ]
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.marce013.controldriver",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Control Driver necesita tu ubicación para calcular los kilómetros recorridos en tus jornadas de trabajo.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Control Driver necesita rastrear tu ubicación en segundo plano para registrar tus recorridos incluso cuando la app no está abierta.",
+        "NSLocationAlwaysUsageDescription": "Permite que Control Driver registre tus kilómetros recorridos de forma automática.",
+        "NSFaceIDUsageDescription": "Usa FaceID para proteger el acceso a tus datos financieros."
+      },
+      "UIBackgroundModes": ["location", "fetch"]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "extra": {
+      "eas": {
+        "projectId": "a0a943f4-3ba3-4132-9469-2a2c388a143d"
+      }
+    },
+    "owner": "marce013",
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Permitir que Control Driver rastree tus kilómetros de trabajo."
+        }
+      ],
+      "expo-local-authentication",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "compileSdkVersion": 35,
+            "targetSdkVersion": 35,
+            "buildToolsVersion": "35.0.0",
+            "minSdkVersion": 24
+          }
+        }
+      ]
+    ]
+  }
+}

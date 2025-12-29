@@ -1,0 +1,38 @@
+{
+  "project_info": {
+    "project_number": "1014184983946",
+    "project_id": "controldriver-e98a2",
+    "storage_bucket": "controldriver-e98a2.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1014184983946:android:09fdf3118b9747a88a5c73",
+        "android_client_info": {
+          "package_name": "com.marce013.controldriver"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1014184983946-25dd00kj10ov94vip8l2ohlbhhncjvah.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.marce013.controldriver",
+            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDdfZaqp6tNXYnG-RzaMzHcOceRAAS3P_c"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

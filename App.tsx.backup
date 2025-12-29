@@ -1,0 +1,2295 @@
+// App.tsx - CONTROL DRIVER COMPLETO CON BILLETERAS RESETEADAS
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  FlatList,
+  Modal,
+  StyleSheet,
+  SafeAreaView,
+  ScrollView,
+  Alert,
+  Platform,
+} from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Calendar } from 'react-native-calendars';
+
+// ==================== TIPOS DE DATOS ====================
+interface Billetera {
+  id: string;
+  nombre: string;
+  saldo: number;
+  color: string;
+  icono: string;
+}
+
+interface RegistroDiario {
+  id: string;
+  app: string;
+  efectivo: number;
+  tarjetas: number;
+  mercadoPago: number;
+  total: number;
+  fecha: Date;
+  fechaRegistro: Date;
+}
+
+interface CargaCombustible {
+  id: string;
+  estacion: string;
+  total: number;
+  litros: number;
+  precioPorLitro: number;
+  billeteraId: string;
+  fecha: Date;
+  fechaRegistro: Date;
+}
+
+interface IngresoGeneral {
+  id: string;
+  monto: number;
+  descripcion: string;
+  billeteraId: string;
+  fecha: Date;
+  fechaRegistro: Date;
+}
+
+interface GastoGeneral {
+  id: string;
+  monto: number;
+  descripcion: string;
+  categoria: string;
+  billeteraId: string;
+  fecha: Date;
+  fechaRegistro: Date;
+}
+
+interface Proyeccion {
+  promedioDiario: number;
+  diasRestantes: number;
+  proyeccionMensual: number;
+  gananciaProyectada: number;
+  mensaje: string;
+}
+
+// ==================== CONSTANTES ====================
+const BILLETERAS_INICIALES: Billetera[] = [
+  { id: '1', nombre: 'Efectivo', saldo: 0.00, color: '#27ae60', icono: '💵' },
+  { id: '2', nombre: 'Tarjetas/Plataforma', saldo: 0.00, color: '#3498db', icono: '💳' },
+  { id: '3', nombre: 'Mercado Pago', saldo: 0.00, color: '#9b59b6', icono: '📱' },
+];
+
+const APPS_DISPONIBLES = ['Uber', 'Didi', 'Cabify', 'Beat', 'InDrive', 'Otro'];
+const ESTACIONES_DISPONIBLES = ['YPF', 'SHELL', 'AXION', 'PUMA', 'OTRA'];
+const CATEGORIAS_GASTOS = ['Comida', 'Transporte', 'Servicios', 'Impuestos', 'Mantenimiento', 'Otros'];
+
+const STORAGE_KEYS = {
+  BILLETERAS: '@billeteras',
+  REGISTROS: '@registrosDiarios',
+  CARGAS: '@cargasCombustible',
+  INGRESOS: '@ingresosGenerales',
+  GASTOS: '@gastosGenerales',
+};
+
+// ==================== UTILIDADES ====================
+const formatearMoneda = (monto: number): string => {
+  return `$${monto.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`;
+};
+
+const formatearFecha = (fecha: Date): string => {
+  return fecha.toLocaleDateString('es-AR', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric'
+  });
+};
+
+const obtenerDiasEnMes = (fecha: Date): number => {
+  return new Date(fecha.getFullYear(), fecha.getMonth() + 1, 0).getDate();
+};
+
+// ==================== COMPONENTE: CALENDARIO PARA FECHAS ====================
+interface SelectorFechaProps {
+  visible: boolean;
+  fechaInicial: Date;
+  onSeleccionar: (fecha: Date) => void;
+  onCancelar: () => void;
+}
+
+const SelectorFecha: React.FC<SelectorFechaProps> = ({
+  visible,
+  fechaInicial,
+  onSeleccionar,
+  onCancelar,
+}) => {
+  const [fechaSeleccionada, setFechaSeleccionada] = useState(
+    fechaInicial.toISOString().split('T')[0]
+  );
+
+  return (
+    <Modal visible={visible} transparent animationType="slide">
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <Text style={styles.modalTitle}>📅 Seleccionar Fecha</Text>
+          
+          <Calendar
+            current={fechaSeleccionada}
+            onDayPress={(day) => setFechaSeleccionada(day.dateString)}
+            markedDates={{
+              [fechaSeleccionada]: { selected: true, selectedColor: '#3498db' }
+            }}
+            theme={{
+              selectedDayBackgroundColor: '#3498db',
+              todayTextColor: '#e74c3c',
+              arrowColor: '#3498db',
+              monthTextColor: '#2c3e50',
+              textMonthFontWeight: 'bold',
+            }}
+          />
+          
+          <View style={styles.modalButtons}>
+            <TouchableOpacity style={styles.botonCancelar} onPress={onCancelar}>
+              <Text style={styles.botonTexto}>Cancelar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.botonConfirmar} 
+              onPress={() => onSeleccionar(new Date(fechaSeleccionada))}
+            >
+              <Text style={[styles.botonTexto, { color: '#fff' }]}>Seleccionar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+};
+
+// ==================== COMPONENTE: DASHBOARD DE LA IMAGEN ====================
+interface DashboardProps {
+  registros: RegistroDiario[];
+  cargas: CargaCombustible[];
+  billeteras: Billetera[];
+  onAbrirViajes: () => void;
+  onAbrirCombustible: () => void;
+  onAbrirIngreso: () => void;
+  onAbrirGasto: () => void;
+  onResetearSaldos: () => void;
+}
+
+const Dashboard: React.FC<DashboardProps> = ({ 
+  registros, 
+  cargas, 
+  billeteras,
+  onAbrirViajes,
+  onAbrirCombustible,
+  onAbrirIngreso,
+  onAbrirGasto,
+  onResetearSaldos
+}) => {
+  // CÁLCULO DE ESTADÍSTICAS
+  const calcularEstadisticas = () => {
+    const hoy = new Date();
+    hoy.setHours(0, 0, 0, 0);
+    
+    const inicioSemana = new Date(hoy);
+    inicioSemana.setDate(hoy.getDate() - hoy.getDay());
+    
+    const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+
+    // Filtrar registros por período
+    const registrosHoy = registros.filter(r => {
+      const fechaReg = new Date(r.fecha);
+      fechaReg.setHours(0, 0, 0, 0);
+      return fechaReg.getTime() === hoy.getTime();
+    });
+
+    const registrosSemana = registros.filter(r => {
+      const fechaReg = new Date(r.fecha);
+      return fechaReg >= inicioSemana;
+    });
+
+    const registrosMes = registros.filter(r => {
+      const fechaReg = new Date(r.fecha);
+      return fechaReg >= inicioMes;
+    });
+
+    // Filtrar cargas por período
+    const cargasHoy = cargas.filter(c => {
+      const fechaCarga = new Date(c.fecha);
+      fechaCarga.setHours(0, 0, 0, 0);
+      return fechaCarga.getTime() === hoy.getTime();
+    });
+
+    const cargasSemana = cargas.filter(c => {
+      const fechaCarga = new Date(c.fecha);
+      return fechaCarga >= inicioSemana;
+    });
+
+    const cargasMes = cargas.filter(c => {
+      const fechaCarga = new Date(c.fecha);
+      return fechaCarga >= inicioMes;
+    });
+
+    // Calcular totales
+    const hoyIngresos = registrosHoy.reduce((sum, r) => sum + r.total, 0);
+    const hoyGastos = cargasHoy.reduce((sum, c) => sum + c.total, 0);
+    const hoyNeto = hoyIngresos - hoyGastos;
+    
+    const semanaIngresos = registrosSemana.reduce((sum, r) => sum + r.total, 0);
+    const semanaGastos = cargasSemana.reduce((sum, c) => sum + c.total, 0);
+    const semanaNeto = semanaIngresos - semanaGastos;
+    
+    const mesIngresos = registrosMes.reduce((sum, r) => sum + r.total, 0);
+    const mesGastos = cargasMes.reduce((sum, c) => sum + c.total, 0);
+    const mesNeto = mesIngresos - mesGastos;
+
+    // Calcular porcentajes
+    const hoyPorcentaje = hoyIngresos > 0 ? (hoyNeto / hoyIngresos) * 100 : 0;
+    const semanaPorcentaje = semanaIngresos > 0 ? (semanaNeto / semanaIngresos) * 100 : 0;
+    const mesPorcentaje = mesIngresos > 0 ? (mesNeto / mesIngresos) * 100 : 0;
+
+    return {
+      hoy: {
+        ingresos: hoyIngresos,
+        gastos: hoyGastos,
+        neto: hoyNeto,
+        porcentaje: hoyPorcentaje
+      },
+      semana: {
+        ingresos: semanaIngresos,
+        gastos: semanaGastos,
+        neto: semanaNeto,
+        porcentaje: semanaPorcentaje
+      },
+      mes: {
+        ingresos: mesIngresos,
+        gastos: mesGastos,
+        neto: mesNeto,
+        porcentaje: mesPorcentaje
+      }
+    };
+  };
+
+  // CÁLCULO DE PROYECCIONES
+  const calcularProyecciones = (): Proyeccion => {
+    const hoy = new Date();
+    const diasEnMes = obtenerDiasEnMes(hoy);
+    const diaActual = hoy.getDate();
+    const diasRestantes = diasEnMes - diaActual;
+    
+    const stats = calcularEstadisticas();
+    const promedioDiario = stats.mes.ingresos / diaActual;
+    const proyeccionMensual = promedioDiario * diasEnMes;
+    const gananciaProyectada = proyeccionMensual * (stats.mes.porcentaje / 100);
+    
+    return {
+      promedioDiario,
+      diasRestantes,
+      proyeccionMensual,
+      gananciaProyectada,
+      mensaje: `Si seguís así, este mes ganarás: ${formatearMoneda(gananciaProyectada)}`
+    };
+  };
+
+  const stats = calcularEstadisticas();
+  const proyeccion = calcularProyecciones();
+
+  return (
+    <ScrollView style={styles.dashboardContainer}>
+      {/* TÍTULO */}
+      <View style={styles.header}>
+        <Text style={styles.tituloPrincipal}>Control Driver</Text>
+      </View>
+
+      {/* ACUMULADO POR PERÍODO - TABLA CORREGIDA Y CENTRADA */}
+      <View style={styles.seccion}>
+        <Text style={styles.tituloSeccion}>Acumulado por Período</Text>
+        
+        <View style={styles.tablaContainer}>
+          {/* ENCABEZADOS */}
+          <View style={styles.filaTabla}>
+            <View style={styles.columnaHeader}>
+              <Text style={styles.encabezadoTabla}>Hoy</Text>
+            </View>
+            <View style={styles.columnaHeader}>
+              <Text style={styles.encabezadoTabla}>Semana</Text>
+            </View>
+            <View style={styles.columnaHeader}>
+              <Text style={styles.encabezadoTabla}>Mes</Text>
+            </View>
+          </View>
+          
+          {/* VALORES TOTALES */}
+          <View style={styles.filaTabla}>
+            <View style={styles.columnaValor}>
+              <Text style={styles.valorTotal}>+{formatearMoneda(stats.hoy.ingresos)}</Text>
+            </View>
+            <View style={styles.columnaValor}>
+              <Text style={styles.valorTotal}>+{formatearMoneda(stats.semana.ingresos)}</Text>
+            </View>
+            <View style={styles.columnaValor}>
+              <Text style={styles.valorTotal}>+{formatearMoneda(stats.mes.ingresos)}</Text>
+            </View>
+          </View>
+          
+          {/* VALORES NETOS */}
+          <View style={styles.filaTabla}>
+            <View style={styles.columnaValor}>
+              <Text style={[styles.valorNeto, { color: stats.hoy.neto >= 0 ? '#27ae60' : '#e74c3c' }]}>
+                Neto: {formatearMoneda(stats.hoy.neto)}
+              </Text>
+            </View>
+            <View style={styles.columnaValor}>
+              <Text style={[styles.valorNeto, { color: stats.semana.neto >= 0 ? '#27ae60' : '#e74c3c' }]}>
+                Neto: {formatearMoneda(stats.semana.neto)}
+              </Text>
+            </View>
+            <View style={styles.columnaValor}>
+              <Text style={[styles.valorNeto, { color: stats.mes.neto >= 0 ? '#27ae60' : '#e74c3c' }]}>
+                Neto: {formatearMoneda(stats.mes.neto)}
+              </Text>
+            </View>
+          </View>
+          
+          {/* PORCENTAJES */}
+          <View style={[styles.filaTabla, { borderBottomWidth: 0 }]}>
+            <View style={styles.columnaValor}>
+              <Text style={styles.porcentaje}>
+                {stats.hoy.porcentaje.toFixed(1)}%
+              </Text>
+            </View>
+            <View style={styles.columnaValor}>
+              <Text style={styles.porcentaje}>
+                {stats.semana.porcentaje.toFixed(1)}%
+              </Text>
+            </View>
+            <View style={styles.columnaValor}>
+              <Text style={styles.porcentaje}>
+                {stats.mes.porcentaje.toFixed(1)}%
+              </Text>
+            </View>
+          </View>
+        </View>
+      </View>
+
+      {/* PROYECCIONES */}
+      <View style={styles.seccion}>
+        <Text style={styles.tituloSeccion}>📈 Proyecciones</Text>
+        
+        <View style={styles.proyeccionCard}>
+          <View style={styles.filaProyeccion}>
+            <Text style={styles.labelProyeccion}>Promedio diario:</Text>
+            <Text style={styles.valorProyeccion}>{formatearMoneda(proyeccion.promedioDiario)}</Text>
+          </View>
+          
+          <View style={styles.filaProyeccion}>
+            <Text style={styles.labelProyeccion}>Días restantes:</Text>
+            <Text style={styles.valorProyeccion}>{proyeccion.diasRestantes}</Text>
+          </View>
+          
+          <View style={styles.filaProyeccion}>
+            <Text style={styles.labelProyeccion}>Proyección mensual:</Text>
+            <Text style={styles.valorProyeccion}>{formatearMoneda(proyeccion.proyeccionMensual)}</Text>
+          </View>
+          
+          <View style={styles.alertaProyeccion}>
+            <Text style={styles.mensajeProyeccion}>Si seguís así, este mes ganarás:</Text>
+            <Text style={styles.gananciaProyectada}>
+              {formatearMoneda(proyeccion.gananciaProyectada)}
+            </Text>
+          </View>
+        </View>
+      </View>
+
+      {/* ACCIONES RÁPIDAS - TODOS LOS BOTONES FUNCIONALES */}
+      <View style={styles.seccion}>
+        <Text style={styles.tituloSeccion}>Acciones Rápidas</Text>
+        
+        <View style={styles.gridAcciones}>
+          <TouchableOpacity 
+            style={styles.botonAccion}
+            onPress={onAbrirIngreso}
+          >
+            <Text style={styles.iconoAccion}>💰</Text>
+            <Text style={styles.textoAccion}>Ingreso</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.botonAccion}
+            onPress={onAbrirGasto}
+          >
+            <Text style={styles.iconoAccion}>💳</Text>
+            <Text style={styles.textoAccion}>Gasto</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.botonAccion}
+            onPress={onAbrirViajes}
+          >
+            <Text style={styles.iconoAccion}>🚗</Text>
+            <Text style={styles.textoAccion}>Viajes App</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.botonAccion}
+            onPress={onAbrirCombustible}
+          >
+            <Text style={styles.iconoAccion}>⛽</Text>
+            <Text style={styles.textoAccion}>Combustible</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* BILLETERAS CON BOTÓN DE RESET */}
+      <View style={styles.seccion}>
+        <View style={styles.headerBilleteras}>
+          <Text style={styles.tituloSeccion}>Billeteras</Text>
+          <TouchableOpacity 
+            style={styles.botonResetMini}
+            onPress={onResetearSaldos}
+          >
+            <Text style={styles.textoResetMini}>🔄 Reset</Text>
+          </TouchableOpacity>
+        </View>
+        
+        <View style={styles.listaBilleteras}>
+          {billeteras.map((billetera) => (
+            <View 
+              key={billetera.id} 
+              style={[
+                styles.cardBilletera,
+                billetera.saldo < 0 && styles.billeteraNegativa
+              ]}
+            >
+              <View style={styles.filaBilletera}>
+                <Text style={styles.iconoBilletera}>{billetera.icono}</Text>
+                <View style={styles.infoBilletera}>
+                  <Text style={styles.nombreBilletera}>{billetera.nombre}</Text>
+                  <Text style={[
+                    styles.saldoBilletera,
+                    { color: billetera.saldo >= 0 ? '#27ae60' : '#e74c3c' }
+                  ]}>
+                    {formatearMoneda(billetera.saldo)}
+                  </Text>
+                </View>
+                <TouchableOpacity 
+                  style={styles.botonCero}
+                  onPress={() => {
+                    Alert.alert(
+                      'Resetear saldo',
+                      `¿Poner el saldo de ${billetera.nombre} en 0?`,
+                      [
+                        { text: 'Cancelar', style: 'cancel' },
+                        {
+                          text: 'Resetear',
+                          onPress: () => {
+                            // Esta función sería pasada como prop si necesitas modificar individualmente
+                            onResetearSaldos();
+                          }
+                        }
+                      ]
+                    );
+                  }}
+                >
+                  <Text style={styles.textoCero}>0</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ))}
+        </View>
+      </View>
+    </ScrollView>
+  );
+};
+
+// ==================== COMPONENTE: REGISTRO DE VIAJES ====================
+interface RegistroViajesProps {
+  visible: boolean;
+  onGuardar: (registro: Omit<RegistroDiario, 'id' | 'fechaRegistro'>) => void;
+  onCancelar: () => void;
+}
+
+const RegistroViajes: React.FC<RegistroViajesProps> = ({
+  visible,
+  onGuardar,
+  onCancelar,
+}) => {
+  const [mostrarCalendario, setMostrarCalendario] = useState(false);
+  const [fecha, setFecha] = useState(new Date());
+  const [app, setApp] = useState('Uber');
+  const [efectivo, setEfectivo] = useState('');
+  const [tarjetas, setTarjetas] = useState('');
+  const [mercadoPago, setMercadoPago] = useState('');
+
+  const total = (parseFloat(efectivo) || 0) + 
+                (parseFloat(tarjetas) || 0) + 
+                (parseFloat(mercadoPago) || 0);
+
+  const handleGuardar = () => {
+    if (total <= 0) {
+      Alert.alert('Error', 'El total debe ser mayor a 0');
+      return;
+    }
+
+    onGuardar({
+      app,
+      efectivo: parseFloat(efectivo) || 0,
+      tarjetas: parseFloat(tarjetas) || 0,
+      mercadoPago: parseFloat(mercadoPago) || 0,
+      total,
+      fecha: new Date(fecha),
+    });
+
+    // Resetear formulario
+    setEfectivo('');
+    setTarjetas('');
+    setMercadoPago('');
+  };
+
+  if (!visible) return null;
+
+  return (
+    <Modal visible={visible} transparent animationType="slide">
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <Text style={styles.modalTitle}>🚗 Registrar Viajes</Text>
+
+          {/* SELECTOR DE FECHA */}
+          <TouchableOpacity 
+            style={styles.botonFecha}
+            onPress={() => setMostrarCalendario(true)}
+          >
+            <Text style={styles.textoFecha}>📅 {formatearFecha(fecha)}</Text>
+            <Text style={styles.textoCambiarFecha}>Cambiar fecha</Text>
+          </TouchableOpacity>
+
+          <SelectorFecha
+            visible={mostrarCalendario}
+            fechaInicial={fecha}
+            onSeleccionar={(nuevaFecha) => {
+              setFecha(nuevaFecha);
+              setMostrarCalendario(false);
+            }}
+            onCancelar={() => setMostrarCalendario(false)}
+          />
+
+          {/* SELECTOR DE APP */}
+          <Text style={styles.label}>App</Text>
+          <ScrollView horizontal style={styles.listaApps}>
+            {APPS_DISPONIBLES.map((appNombre) => (
+              <TouchableOpacity
+                key={appNombre}
+                style={[
+                  styles.botonApp,
+                  app === appNombre && styles.botonAppSeleccionado
+                ]}
+                onPress={() => setApp(appNombre)}
+              >
+                <Text style={[
+                  styles.textoApp,
+                  app === appNombre && styles.textoAppSeleccionado
+                ]}>
+                  {appNombre}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          {/* INPUTS DE MONTO */}
+          <Text style={styles.label}>💵 Efectivo</Text>
+          <TextInput
+            style={styles.input}
+            value={efectivo}
+            onChangeText={setEfectivo}
+            placeholder="0.00"
+            keyboardType="decimal-pad"
+          />
+
+          <Text style={styles.label}>💳 Tarjetas/Plataforma</Text>
+          <TextInput
+            style={styles.input}
+            value={tarjetas}
+            onChangeText={setTarjetas}
+            placeholder="0.00"
+            keyboardType="decimal-pad"
+          />
+
+          <Text style={styles.label}>📱 Mercado Pago</Text>
+          <TextInput
+            style={styles.input}
+            value={mercadoPago}
+            onChangeText={setMercadoPago}
+            placeholder="0.00"
+            keyboardType="decimal-pad"
+          />
+
+          {/* TOTAL */}
+          <View style={styles.totalContainer}>
+            <Text style={styles.totalLabel}>Total:</Text>
+            <Text style={styles.totalValor}>{formatearMoneda(total)}</Text>
+          </View>
+
+          {/* BOTONES */}
+          <View style={styles.modalButtons}>
+            <TouchableOpacity style={styles.botonCancelar} onPress={onCancelar}>
+              <Text style={styles.botonTexto}>Cancelar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.botonGuardar} onPress={handleGuardar}>
+              <Text style={[styles.botonTexto, { color: '#fff' }]}>Guardar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+};
+
+// ==================== COMPONENTE: REGISTRO DE COMBUSTIBLE ====================
+interface RegistroCombustibleProps {
+  visible: boolean;
+  billeteras: Billetera[];
+  onGuardar: (carga: Omit<CargaCombustible, 'id' | 'fechaRegistro'>) => void;
+  onCancelar: () => void;
+}
+
+const RegistroCombustible: React.FC<RegistroCombustibleProps> = ({
+  visible,
+  billeteras,
+  onGuardar,
+  onCancelar,
+}) => {
+  const [mostrarCalendario, setMostrarCalendario] = useState(false);
+  const [fecha, setFecha] = useState(new Date());
+  const [estacion, setEstacion] = useState('YPF');
+  const [total, setTotal] = useState('');
+  const [litros, setLitros] = useState('');
+  const [billeteraId, setBilleteraId] = useState(billeteras[0]?.id || '');
+
+  const precioPorLitro = litros && total 
+    ? (parseFloat(total) / parseFloat(litros)).toFixed(2)
+    : '0.00';
+
+  const handleGuardar = () => {
+    const totalNum = parseFloat(total);
+    const litrosNum = parseFloat(litros);
+
+    if (!totalNum || !litrosNum || totalNum <= 0 || litrosNum <= 0) {
+      Alert.alert('Error', 'Completa los campos correctamente');
+      return;
+    }
+
+    onGuardar({
+      estacion,
+      total: totalNum,
+      litros: litrosNum,
+      precioPorLitro: parseFloat(precioPorLitro),
+      billeteraId,
+      fecha: new Date(fecha),
+    });
+
+    // Resetear
+    setTotal('');
+    setLitros('');
+  };
+
+  if (!visible) return null;
+
+  return (
+    <Modal visible={visible} transparent animationType="slide">
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <Text style={styles.modalTitle}>⛽ Registrar Combustible</Text>
+
+          {/* SELECTOR DE FECHA */}
+          <TouchableOpacity 
+            style={styles.botonFecha}
+            onPress={() => setMostrarCalendario(true)}
+          >
+            <Text style={styles.textoFecha}>📅 {formatearFecha(fecha)}</Text>
+            <Text style={styles.textoCambiarFecha}>Cambiar fecha</Text>
+          </TouchableOpacity>
+
+          <SelectorFecha
+            visible={mostrarCalendario}
+            fechaInicial={fecha}
+            onSeleccionar={(nuevaFecha) => {
+              setFecha(nuevaFecha);
+              setMostrarCalendario(false);
+            }}
+            onCancelar={() => setMostrarCalendario(false)}
+          />
+
+          {/* SELECTOR DE ESTACIÓN */}
+          <Text style={styles.label}>Estación</Text>
+          <ScrollView horizontal style={styles.listaApps}>
+            {ESTACIONES_DISPONIBLES.map((est) => (
+              <TouchableOpacity
+                key={est}
+                style={[
+                  styles.botonApp,
+                  estacion === est && styles.botonAppSeleccionado
+                ]}
+                onPress={() => setEstacion(est)}
+              >
+                <Text style={[
+                  styles.textoApp,
+                  estacion === est && styles.textoAppSeleccionado
+                ]}>
+                  {est}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          {/* BILLETERA DE PAGO */}
+          <Text style={styles.label}>Billetera de Pago</Text>
+          <ScrollView horizontal style={styles.listaApps}>
+            {billeteras.map((b) => (
+              <TouchableOpacity
+                key={b.id}
+                style={[
+                  styles.botonApp,
+                  billeteraId === b.id && styles.botonAppSeleccionado
+                ]}
+                onPress={() => setBilleteraId(b.id)}
+              >
+                <Text style={[
+                  styles.textoApp,
+                  billeteraId === b.id && styles.textoAppSeleccionado
+                ]}>
+                  {b.icono} {b.nombre}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          {/* INPUTS */}
+          <View style={styles.filaInputs}>
+            <View style={styles.inputMitad}>
+              <Text style={styles.label}>Total ($)</Text>
+              <TextInput
+                style={styles.input}
+                value={total}
+                onChangeText={setTotal}
+                placeholder="0.00"
+                keyboardType="decimal-pad"
+              />
+            </View>
+            
+            <View style={styles.inputMitad}>
+              <Text style={styles.label}>Litros</Text>
+              <TextInput
+                style={styles.input}
+                value={litros}
+                onChangeText={setLitros}
+                placeholder="0.0"
+                keyboardType="decimal-pad"
+              />
+            </View>
+          </View>
+
+          {/* PRECIO POR LITRO (CALCULADO) */}
+          <Text style={styles.label}>Precio por Litro</Text>
+          <TextInput
+            style={[styles.input, styles.inputCalculado]}
+            value={precioPorLitro}
+            editable={false}
+            placeholder="Calculado automáticamente"
+          />
+
+          {/* BOTONES */}
+          <View style={styles.modalButtons}>
+            <TouchableOpacity style={styles.botonCancelar} onPress={onCancelar}>
+              <Text style={styles.botonTexto}>Cancelar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.botonGuardar} onPress={handleGuardar}>
+              <Text style={[styles.botonTexto, { color: '#fff' }]}>Guardar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+};
+
+// ==================== COMPONENTE: REGISTRO DE INGRESO GENERAL ====================
+interface RegistroIngresoGeneralProps {
+  visible: boolean;
+  billeteras: Billetera[];
+  onGuardar: (ingreso: {
+    monto: number;
+    descripcion: string;
+    billeteraId: string;
+    fecha: Date;
+  }) => void;
+  onCancelar: () => void;
+}
+
+const RegistroIngresoGeneral: React.FC<RegistroIngresoGeneralProps> = ({
+  visible,
+  billeteras,
+  onGuardar,
+  onCancelar,
+}) => {
+  const [mostrarCalendario, setMostrarCalendario] = useState(false);
+  const [fecha, setFecha] = useState(new Date());
+  const [descripcion, setDescripcion] = useState('');
+  const [monto, setMonto] = useState('');
+  const [billeteraId, setBilleteraId] = useState(billeteras[0]?.id || '');
+
+  const handleGuardar = () => {
+    const montoNum = parseFloat(monto);
+    
+    if (!montoNum || montoNum <= 0) {
+      Alert.alert('Error', 'Ingresa un monto válido');
+      return;
+    }
+    
+    if (!descripcion.trim()) {
+      Alert.alert('Error', 'Ingresa una descripción');
+      return;
+    }
+
+    onGuardar({
+      monto: montoNum,
+      descripcion: descripcion.trim(),
+      billeteraId,
+      fecha: new Date(fecha),
+    });
+
+    // Resetear
+    setDescripcion('');
+    setMonto('');
+  };
+
+  if (!visible) return null;
+
+  return (
+    <Modal visible={visible} transparent animationType="slide">
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <Text style={styles.modalTitle}>💰 Ingreso General</Text>
+
+          {/* SELECTOR DE FECHA */}
+          <TouchableOpacity 
+            style={styles.botonFecha}
+            onPress={() => setMostrarCalendario(true)}
+          >
+            <Text style={styles.textoFecha}>📅 {formatearFecha(fecha)}</Text>
+            <Text style={styles.textoCambiarFecha}>Cambiar fecha</Text>
+          </TouchableOpacity>
+
+          <SelectorFecha
+            visible={mostrarCalendario}
+            fechaInicial={fecha}
+            onSeleccionar={(nuevaFecha) => {
+              setFecha(nuevaFecha);
+              setMostrarCalendario(false);
+            }}
+            onCancelar={() => setMostrarCalendario(false)}
+          />
+
+          {/* DESCRIPCIÓN */}
+          <Text style={styles.label}>Descripción</Text>
+          <TextInput
+            style={styles.input}
+            value={descripcion}
+            onChangeText={setDescripcion}
+            placeholder="Ej: Pago cliente, Transferencia, etc."
+          />
+
+          {/* MONTO */}
+          <Text style={styles.label}>Monto ($)</Text>
+          <TextInput
+            style={styles.input}
+            value={monto}
+            onChangeText={setMonto}
+            placeholder="0.00"
+            keyboardType="decimal-pad"
+          />
+
+          {/* BILLETERA */}
+          <Text style={styles.label}>Billetera de Destino</Text>
+          <ScrollView horizontal style={styles.listaApps}>
+            {billeteras.map((b) => (
+              <TouchableOpacity
+                key={b.id}
+                style={[
+                  styles.botonApp,
+                  billeteraId === b.id && styles.botonAppSeleccionado
+                ]}
+                onPress={() => setBilleteraId(b.id)}
+              >
+                <Text style={[
+                  styles.textoApp,
+                  billeteraId === b.id && styles.textoAppSeleccionado
+                ]}>
+                  {b.icono} {b.nombre}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          {/* BOTONES */}
+          <View style={styles.modalButtons}>
+            <TouchableOpacity style={styles.botonCancelar} onPress={onCancelar}>
+              <Text style={styles.botonTexto}>Cancelar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.botonGuardar} onPress={handleGuardar}>
+              <Text style={[styles.botonTexto, { color: '#fff' }]}>Guardar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+};
+
+// ==================== COMPONENTE: REGISTRO DE GASTO GENERAL ====================
+interface RegistroGastoGeneralProps {
+  visible: boolean;
+  billeteras: Billetera[];
+  onGuardar: (gasto: {
+    monto: number;
+    descripcion: string;
+    categoria: string;
+    billeteraId: string;
+    fecha: Date;
+  }) => void;
+  onCancelar: () => void;
+}
+
+const RegistroGastoGeneral: React.FC<RegistroGastoGeneralProps> = ({
+  visible,
+  billeteras,
+  onGuardar,
+  onCancelar,
+}) => {
+  const [mostrarCalendario, setMostrarCalendario] = useState(false);
+  const [fecha, setFecha] = useState(new Date());
+  const [descripcion, setDescripcion] = useState('');
+  const [monto, setMonto] = useState('');
+  const [categoria, setCategoria] = useState('Otros');
+  const [billeteraId, setBilleteraId] = useState(billeteras[0]?.id || '');
+
+  const handleGuardar = () => {
+    const montoNum = parseFloat(monto);
+    
+    if (!montoNum || montoNum <= 0) {
+      Alert.alert('Error', 'Ingresa un monto válido');
+      return;
+    }
+    
+    if (!descripcion.trim()) {
+      Alert.alert('Error', 'Ingresa una descripción');
+      return;
+    }
+
+    onGuardar({
+      monto: montoNum,
+      descripcion: descripcion.trim(),
+      categoria,
+      billeteraId,
+      fecha: new Date(fecha),
+    });
+
+    // Resetear
+    setDescripcion('');
+    setMonto('');
+  };
+
+  if (!visible) return null;
+
+  return (
+    <Modal visible={visible} transparent animationType="slide">
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <Text style={styles.modalTitle}>💳 Gasto General</Text>
+
+          {/* SELECTOR DE FECHA */}
+          <TouchableOpacity 
+            style={styles.botonFecha}
+            onPress={() => setMostrarCalendario(true)}
+          >
+            <Text style={styles.textoFecha}>📅 {formatearFecha(fecha)}</Text>
+            <Text style={styles.textoCambiarFecha}>Cambiar fecha</Text>
+          </TouchableOpacity>
+
+          <SelectorFecha
+            visible={mostrarCalendario}
+            fechaInicial={fecha}
+            onSeleccionar={(nuevaFecha) => {
+              setFecha(nuevaFecha);
+              setMostrarCalendario(false);
+            }}
+            onCancelar={() => setMostrarCalendario(false)}
+          />
+
+          {/* DESCRIPCIÓN */}
+          <Text style={styles.label}>Descripción</Text>
+          <TextInput
+            style={styles.input}
+            value={descripcion}
+            onChangeText={setDescripcion}
+            placeholder="Ej: Supermercado, Combustible, etc."
+          />
+
+          {/* MONTO */}
+          <Text style={styles.label}>Monto ($)</Text>
+          <TextInput
+            style={styles.input}
+            value={monto}
+            onChangeText={setMonto}
+            placeholder="0.00"
+            keyboardType="decimal-pad"
+          />
+
+          {/* CATEGORÍA */}
+          <Text style={styles.label}>Categoría</Text>
+          <ScrollView horizontal style={styles.listaApps}>
+            {CATEGORIAS_GASTOS.map((cat) => (
+              <TouchableOpacity
+                key={cat}
+                style={[
+                  styles.botonApp,
+                  categoria === cat && styles.botonAppSeleccionado
+                ]}
+                onPress={() => setCategoria(cat)}
+              >
+                <Text style={[
+                  styles.textoApp,
+                  categoria === cat && styles.textoAppSeleccionado
+                ]}>
+                  {cat}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          {/* BILLETERA */}
+          <Text style={styles.label}>Billetera de Pago</Text>
+          <ScrollView horizontal style={styles.listaApps}>
+            {billeteras.map((b) => (
+              <TouchableOpacity
+                key={b.id}
+                style={[
+                  styles.botonApp,
+                  billeteraId === b.id && styles.botonAppSeleccionado
+                ]}
+                onPress={() => setBilleteraId(b.id)}
+              >
+                <Text style={[
+                  styles.textoApp,
+                  billeteraId === b.id && styles.textoAppSeleccionado
+                ]}>
+                  {b.icono} {b.nombre}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          {/* BOTONES */}
+          <View style={styles.modalButtons}>
+            <TouchableOpacity style={styles.botonCancelar} onPress={onCancelar}>
+              <Text style={styles.botonTexto}>Cancelar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.botonGuardar} onPress={handleGuardar}>
+              <Text style={[styles.botonTexto, { color: '#fff' }]}>Guardar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+};
+
+// ==================== COMPONENTE: HISTORIAL ====================
+interface HistorialProps {
+  registros: RegistroDiario[];
+  cargas: CargaCombustible[];
+  ingresos: IngresoGeneral[];
+  gastos: GastoGeneral[];
+  billeteras: Billetera[];
+  onEliminarRegistro: (id: string) => void;
+  onEliminarCarga: (id: string) => void;
+  onEliminarIngreso: (id: string) => void;
+  onEliminarGasto: (id: string) => void;
+  onResetearTodo: () => void;
+}
+
+const Historial: React.FC<HistorialProps> = ({
+  registros,
+  cargas,
+  ingresos,
+  gastos,
+  billeteras,
+  onEliminarRegistro,
+  onEliminarCarga,
+  onEliminarIngreso,
+  onEliminarGasto,
+  onResetearTodo,
+}) => {
+  const todosRegistros = [
+    ...registros.map(r => ({ ...r, tipo: 'viaje' as const })),
+    ...cargas.map(c => ({ ...c, tipo: 'combustible' as const })),
+    ...ingresos.map(i => ({ ...i, tipo: 'ingreso' as const })),
+    ...gastos.map(g => ({ ...g, tipo: 'gasto' as const }))
+  ].sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
+
+  const renderItem = ({ item }: any) => {
+    const obtenerColor = () => {
+      switch (item.tipo) {
+        case 'viaje': return '#3498db';
+        case 'combustible': return '#e67e22';
+        case 'ingreso': return '#27ae60';
+        case 'gasto': return '#e74c3c';
+        default: return '#7f8c8d';
+      }
+    };
+
+    const obtenerIcono = () => {
+      switch (item.tipo) {
+        case 'viaje': return '🚗';
+        case 'combustible': return '⛽';
+        case 'ingreso': return '💰';
+        case 'gasto': return '💳';
+        default: return '📝';
+      }
+    };
+
+    const obtenerTitulo = () => {
+      switch (item.tipo) {
+        case 'viaje': return `${obtenerIcono()} ${item.app}`;
+        case 'combustible': return `${obtenerIcono()} ${item.estacion}`;
+        case 'ingreso': return `${obtenerIcono()} ${item.descripcion}`;
+        case 'gasto': return `${obtenerIcono()} ${item.descripcion}`;
+        default: return `${obtenerIcono()} Registro`;
+      }
+    };
+
+    const handleEliminar = () => {
+      Alert.alert(
+        'Eliminar Registro',
+        `¿Eliminar registro del ${formatearFecha(new Date(item.fecha))}?`,
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          {
+            text: 'Eliminar',
+            style: 'destructive',
+            onPress: () => {
+              switch (item.tipo) {
+                case 'viaje':
+                  onEliminarRegistro(item.id);
+                  break;
+                case 'combustible':
+                  onEliminarCarga(item.id);
+                  break;
+                case 'ingreso':
+                  onEliminarIngreso(item.id);
+                  break;
+                case 'gasto':
+                  onEliminarGasto(item.id);
+                  break;
+              }
+              Alert.alert('✅ Eliminado', 'Registro eliminado correctamente');
+            }
+          }
+        ]
+      );
+    };
+
+    return (
+      <View style={[
+        styles.cardHistorial,
+        { borderLeftColor: obtenerColor() }
+      ]}>
+        <View style={styles.filaHistorial}>
+          <View style={styles.infoHistorial}>
+            <Text style={styles.tituloHistorial}>
+              {obtenerTitulo()}
+            </Text>
+            <Text style={styles.fechaHistorial}>
+              {formatearFecha(new Date(item.fecha))}
+            </Text>
+          </View>
+          
+          <View style={styles.derechaHistorial}>
+            <Text style={[
+              styles.montoHistorial,
+              { color: item.tipo === 'gasto' ? '#e74c3c' : '#27ae60' }
+            ]}>
+              {item.tipo === 'gasto' ? '-' : '+'}{formatearMoneda(item.tipo === 'viaje' ? item.total : item.monto)}
+            </Text>
+            <TouchableOpacity onPress={handleEliminar} style={styles.botonEliminarContainer}>
+              <Text style={styles.botonEliminar}>🗑️</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+        
+        {item.tipo === 'viaje' ? (
+          <View style={styles.detallesViaje}>
+            <Text style={styles.detalle}>💵 {formatearMoneda(item.efectivo)}</Text>
+            <Text style={styles.detalle}>💳 {formatearMoneda(item.tarjetas)}</Text>
+            <Text style={styles.detalle}>📱 {formatearMoneda(item.mercadoPago)}</Text>
+          </View>
+        ) : item.tipo === 'combustible' ? (
+          <View style={styles.detallesCombustible}>
+            <Text style={styles.detalle}>{item.litros}L</Text>
+            <Text style={styles.detalle}>{formatearMoneda(item.precioPorLitro)}/L</Text>
+            <Text style={styles.detalle}>
+              Pagado con: {billeteras.find(b => b.id === item.billeteraId)?.nombre}
+            </Text>
+          </View>
+        ) : item.tipo === 'ingreso' ? (
+          <View style={styles.detallesGeneral}>
+            <Text style={styles.detalle}>
+              Billetera: {billeteras.find(b => b.id === item.billeteraId)?.nombre}
+            </Text>
+          </View>
+        ) : item.tipo === 'gasto' ? (
+          <View style={styles.detallesGeneral}>
+            <Text style={styles.detalle}>Categoría: {item.categoria}</Text>
+            <Text style={styles.detalle}>
+              Billetera: {billeteras.find(b => b.id === item.billeteraId)?.nombre}
+            </Text>
+          </View>
+        ) : null}
+      </View>
+    );
+  };
+
+  return (
+    <View style={styles.historialContainer}>
+      <View style={styles.headerHistorial}>
+        <Text style={styles.tituloSeccion}>📋 Historial Completo</Text>
+        <TouchableOpacity 
+          style={styles.botonResetTodo}
+          onPress={onResetearTodo}
+        >
+          <Text style={styles.textoResetTodo}>🔄 Reset Todo</Text>
+        </TouchableOpacity>
+      </View>
+      
+      {todosRegistros.length === 0 ? (
+        <View style={styles.vacioContainer}>
+          <Text style={styles.iconoVacio}>📭</Text>
+          <Text style={styles.textoVacio}>No hay registros</Text>
+          <Text style={styles.subtextoVacio}>
+            Usa las Acciones Rápidas para agregar registros
+          </Text>
+        </View>
+      ) : (
+        <FlatList
+          data={todosRegistros}
+          keyExtractor={(item) => item.id}
+          renderItem={renderItem}
+          contentContainerStyle={styles.listaHistorial}
+        />
+      )}
+    </View>
+  );
+};
+
+// ==================== APP PRINCIPAL ====================
+export default function App() {
+  // ESTADOS PRINCIPALES
+  const [billeteras, setBilleteras] = useState<Billetera[]>(BILLETERAS_INICIALES);
+  const [registros, setRegistros] = useState<RegistroDiario[]>([]);
+  const [cargas, setCargas] = useState<CargaCombustible[]>([]);
+  const [ingresosGenerales, setIngresosGenerales] = useState<IngresoGeneral[]>([]);
+  const [gastosGenerales, setGastosGenerales] = useState<GastoGeneral[]>([]);
+  
+  // ESTADOS DE MODALES
+  const [mostrarRegistroViajes, setMostrarRegistroViajes] = useState(false);
+  const [mostrarRegistroCombustible, setMostrarRegistroCombustible] = useState(false);
+  const [mostrarRegistroIngreso, setMostrarRegistroIngreso] = useState(false);
+  const [mostrarRegistroGasto, setMostrarRegistroGasto] = useState(false);
+  const [mostrarHistorial, setMostrarHistorial] = useState(false);
+
+  // CARGAR DATOS AL INICIAR
+  useEffect(() => {
+    cargarDatos();
+  }, []);
+
+  // GUARDAR DATOS CUANDO CAMBIAN
+  useEffect(() => {
+    guardarDatos();
+  }, [billeteras, registros, cargas, ingresosGenerales, gastosGenerales]);
+
+  const cargarDatos = async () => {
+    try {
+      const [
+        savedBilleteras, 
+        savedRegistros, 
+        savedCargas,
+        savedIngresos,
+        savedGastos
+      ] = await Promise.all([
+        AsyncStorage.getItem(STORAGE_KEYS.BILLETERAS),
+        AsyncStorage.getItem(STORAGE_KEYS.REGISTROS),
+        AsyncStorage.getItem(STORAGE_KEYS.CARGAS),
+        AsyncStorage.getItem(STORAGE_KEYS.INGRESOS),
+        AsyncStorage.getItem(STORAGE_KEYS.GASTOS),
+      ]);
+
+      // CÓDIGO TEMPORAL: RESETEAR BILLETERAS A 0
+      // Eliminar los datos guardados de billeteras para empezar desde 0
+      await AsyncStorage.removeItem(STORAGE_KEYS.BILLETERAS);
+      
+      // Usar siempre los valores iniciales (0)
+      setBilleteras(BILLETERAS_INICIALES);
+      
+      if (savedRegistros) setRegistros(JSON.parse(savedRegistros).map((r: any) => ({
+        ...r,
+        fecha: new Date(r.fecha),
+        fechaRegistro: new Date(r.fechaRegistro)
+      })));
+      if (savedCargas) setCargas(JSON.parse(savedCargas).map((c: any) => ({
+        ...c,
+        fecha: new Date(c.fecha),
+        fechaRegistro: new Date(c.fechaRegistro)
+      })));
+      if (savedIngresos) setIngresosGenerales(JSON.parse(savedIngresos).map((i: any) => ({
+        ...i,
+        fecha: new Date(i.fecha),
+        fechaRegistro: new Date(i.fechaRegistro)
+      })));
+      if (savedGastos) setGastosGenerales(JSON.parse(savedGastos).map((g: any) => ({
+        ...g,
+        fecha: new Date(g.fecha),
+        fechaRegistro: new Date(g.fechaRegistro)
+      })));
+    } catch (error) {
+      console.error('Error cargando datos:', error);
+      // En caso de error, usar valores iniciales
+      setBilleteras(BILLETERAS_INICIALES);
+    }
+  };
+
+  const guardarDatos = async () => {
+    try {
+      await Promise.all([
+        AsyncStorage.setItem(STORAGE_KEYS.BILLETERAS, JSON.stringify(billeteras)),
+        AsyncStorage.setItem(STORAGE_KEYS.REGISTROS, JSON.stringify(registros)),
+        AsyncStorage.setItem(STORAGE_KEYS.CARGAS, JSON.stringify(cargas)),
+        AsyncStorage.setItem(STORAGE_KEYS.INGRESOS, JSON.stringify(ingresosGenerales)),
+        AsyncStorage.setItem(STORAGE_KEYS.GASTOS, JSON.stringify(gastosGenerales)),
+      ]);
+    } catch (error) {
+      console.error('Error guardando datos:', error);
+    }
+  };
+
+  // FUNCIÓN PARA RESETEAR LAS BILLETERAS A 0
+  const resetearSaldos = () => {
+    Alert.alert(
+      '🔄 Resetear Saldos',
+      '¿Resetear los saldos de todas las billeteras a 0?\n\nLos registros no se borrarán.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Resetear Saldos',
+          onPress: () => {
+            setBilleteras(BILLETERAS_INICIALES);
+            Alert.alert('✅ Éxito', 'Saldos reseteados a 0');
+          }
+        }
+      ]
+    );
+  };
+
+  // FUNCIÓN PARA RESETEAR TODO
+  const resetearTodo = () => {
+    Alert.alert(
+      '⚠️ Resetear Todo',
+      '¿Estás seguro de que querés resetear TODOS los datos?\n\nEsto borrará todos los registros y saldos.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Resetear Todo',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await Promise.all([
+                AsyncStorage.removeItem(STORAGE_KEYS.BILLETERAS),
+                AsyncStorage.removeItem(STORAGE_KEYS.REGISTROS),
+                AsyncStorage.removeItem(STORAGE_KEYS.CARGAS),
+                AsyncStorage.removeItem(STORAGE_KEYS.INGRESOS),
+                AsyncStorage.removeItem(STORAGE_KEYS.GASTOS),
+              ]);
+              
+              setBilleteras(BILLETERAS_INICIALES);
+              setRegistros([]);
+              setCargas([]);
+              setIngresosGenerales([]);
+              setGastosGenerales([]);
+              
+              Alert.alert('✅ Éxito', 'Todos los datos han sido reseteados');
+            } catch (error) {
+              Alert.alert('❌ Error', 'No se pudieron resetear los datos');
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  // HANDLERS PARA REGISTROS
+  const handleGuardarRegistro = (nuevoRegistro: Omit<RegistroDiario, 'id' | 'fechaRegistro'>) => {
+    const registroCompleto: RegistroDiario = {
+      ...nuevoRegistro,
+      id: Date.now().toString(),
+      fechaRegistro: new Date()
+    };
+
+    setRegistros([registroCompleto, ...registros]);
+    
+    // Actualizar saldos de billeteras
+    setBilleteras(prev => prev.map(b => {
+      if (b.nombre === 'Efectivo') {
+        return { ...b, saldo: b.saldo + nuevoRegistro.efectivo };
+      } else if (b.nombre === 'Tarjetas/Plataforma') {
+        return { ...b, saldo: b.saldo + nuevoRegistro.tarjetas };
+      } else if (b.nombre === 'Mercado Pago') {
+        return { ...b, saldo: b.saldo + nuevoRegistro.mercadoPago };
+      }
+      return b;
+    }));
+
+    setMostrarRegistroViajes(false);
+    Alert.alert('✅ Éxito', 'Viaje registrado correctamente');
+  };
+
+  const handleGuardarCarga = (nuevaCarga: Omit<CargaCombustible, 'id' | 'fechaRegistro'>) => {
+    const cargaCompleta: CargaCombustible = {
+      ...nuevaCarga,
+      id: Date.now().toString(),
+      fechaRegistro: new Date()
+    };
+
+    setCargas([cargaCompleta, ...cargas]);
+    
+    // Actualizar saldo de billetera usada
+    setBilleteras(prev => prev.map(b => 
+      b.id === nuevaCarga.billeteraId 
+        ? { ...b, saldo: b.saldo - nuevaCarga.total }
+        : b
+    ));
+
+    setMostrarRegistroCombustible(false);
+    Alert.alert('✅ Éxito', 'Carga de combustible registrada');
+  };
+
+  const handleGuardarIngreso = (nuevoIngreso: Omit<IngresoGeneral, 'id' | 'fechaRegistro'>) => {
+    const ingresoCompleto: IngresoGeneral = {
+      ...nuevoIngreso,
+      id: Date.now().toString(),
+      fechaRegistro: new Date()
+    };
+
+    setIngresosGenerales([ingresoCompleto, ...ingresosGenerales]);
+    
+    // Actualizar saldo de billetera
+    setBilleteras(prev => prev.map(b => 
+      b.id === nuevoIngreso.billeteraId 
+        ? { ...b, saldo: b.saldo + nuevoIngreso.monto }
+        : b
+    ));
+
+    setMostrarRegistroIngreso(false);
+    Alert.alert('✅ Éxito', 'Ingreso registrado correctamente');
+  };
+
+  const handleGuardarGasto = (nuevoGasto: Omit<GastoGeneral, 'id' | 'fechaRegistro'>) => {
+    const gastoCompleto: GastoGeneral = {
+      ...nuevoGasto,
+      id: Date.now().toString(),
+      fechaRegistro: new Date()
+    };
+
+    setGastosGenerales([gastoCompleto, ...gastosGenerales]);
+    
+    // Actualizar saldo de billetera
+    setBilleteras(prev => prev.map(b => 
+      b.id === nuevoGasto.billeteraId 
+        ? { ...b, saldo: b.saldo - nuevoGasto.monto }
+        : b
+    ));
+
+    setMostrarRegistroGasto(false);
+    Alert.alert('✅ Éxito', 'Gasto registrado correctamente');
+  };
+
+  const handleEliminarRegistro = (id: string) => {
+    const registro = registros.find(r => r.id === id);
+    if (!registro) return;
+
+    setRegistros(prev => prev.filter(r => r.id !== id));
+    
+    // Revertir saldos
+    setBilleteras(prev => prev.map(b => {
+      if (b.nombre === 'Efectivo') {
+        return { ...b, saldo: b.saldo - registro.efectivo };
+      } else if (b.nombre === 'Tarjetas/Plataforma') {
+        return { ...b, saldo: b.saldo - registro.tarjetas };
+      } else if (b.nombre === 'Mercado Pago') {
+        return { ...b, saldo: b.saldo - registro.mercadoPago };
+      }
+      return b;
+    }));
+  };
+
+  const handleEliminarCarga = (id: string) => {
+    const carga = cargas.find(c => c.id === id);
+    if (!carga) return;
+
+    setCargas(prev => prev.filter(c => c.id !== id));
+    
+    // Revertir saldo
+    setBilleteras(prev => prev.map(b => 
+      b.id === carga.billeteraId 
+        ? { ...b, saldo: b.saldo + carga.total }
+        : b
+    ));
+  };
+
+  const handleEliminarIngreso = (id: string) => {
+    const ingreso = ingresosGenerales.find(i => i.id === id);
+    if (!ingreso) return;
+
+    setIngresosGenerales(prev => prev.filter(i => i.id !== id));
+    
+    // Revertir saldo
+    setBilleteras(prev => prev.map(b => 
+      b.id === ingreso.billeteraId 
+        ? { ...b, saldo: b.saldo - ingreso.monto }
+        : b
+    ));
+  };
+
+  const handleEliminarGasto = (id: string) => {
+    const gasto = gastosGenerales.find(g => g.id === id);
+    if (!gasto) return;
+
+    setGastosGenerales(prev => prev.filter(g => g.id !== id));
+    
+    // Revertir saldo
+    setBilleteras(prev => prev.map(b => 
+      b.id === gasto.billeteraId 
+        ? { ...b, saldo: b.saldo + gasto.monto }
+        : b
+    ));
+  };
+
+  // NAVEGACIÓN
+  const navegarA = (destino: 'dashboard' | 'historial') => {
+    if (destino === 'dashboard') setMostrarHistorial(false);
+    if (destino === 'historial') setMostrarHistorial(true);
+  };
+
+  return (
+    <SafeAreaView style={styles.container}>
+      {/* HEADER */}
+      <View style={styles.appHeader}>
+        <View style={styles.headerRow}>
+          <View>
+            <Text style={styles.appTitle}>🚗 Control Driver</Text>
+            <Text style={styles.appSubtitle}>Gestión inteligente de ingresos</Text>
+          </View>
+          <TouchableOpacity 
+            style={styles.botonReset}
+            onPress={resetearSaldos}
+          >
+            <Text style={styles.textoReset}>🔄 Reset</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* NAVEGACIÓN */}
+      <View style={styles.navegacion}>
+        <TouchableOpacity 
+          style={[styles.botonNav, !mostrarHistorial && styles.botonNavActivo]}
+          onPress={() => navegarA('dashboard')}
+        >
+          <Text style={[styles.textoNav, !mostrarHistorial && styles.textoNavActivo]}>
+            📊 Dashboard
+          </Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={[styles.botonNav, mostrarHistorial && styles.botonNavActivo]}
+          onPress={() => navegarA('historial')}
+        >
+          <Text style={[styles.textoNav, mostrarHistorial && styles.textoNavActivo]}>
+            📋 Historial
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* CONTENIDO PRINCIPAL */}
+      <View style={styles.contenido}>
+        {mostrarHistorial ? (
+          <Historial
+            registros={registros}
+            cargas={cargas}
+            ingresos={ingresosGenerales}
+            gastos={gastosGenerales}
+            billeteras={billeteras}
+            onEliminarRegistro={handleEliminarRegistro}
+            onEliminarCarga={handleEliminarCarga}
+            onEliminarIngreso={handleEliminarIngreso}
+            onEliminarGasto={handleEliminarGasto}
+            onResetearTodo={resetearTodo}
+          />
+        ) : (
+          <Dashboard
+            registros={registros}
+            cargas={cargas}
+            billeteras={billeteras}
+            onAbrirViajes={() => setMostrarRegistroViajes(true)}
+            onAbrirCombustible={() => setMostrarRegistroCombustible(true)}
+            onAbrirIngreso={() => setMostrarRegistroIngreso(true)}
+            onAbrirGasto={() => setMostrarRegistroGasto(true)}
+            onResetearSaldos={resetearSaldos}
+          />
+        )}
+      </View>
+
+      {/* BOTONES DE ACCIÓN FIJA */}
+      <View style={styles.accionesFijas}>
+        <TouchableOpacity 
+          style={[styles.botonFijo, { backgroundColor: '#3498db' }]}
+          onPress={() => setMostrarRegistroViajes(true)}
+        >
+          <Text style={styles.iconoFijo}>🚗</Text>
+          <Text style={styles.textoFijo}>Viajes App</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={[styles.botonFijo, { backgroundColor: '#e67e22' }]}
+          onPress={() => setMostrarRegistroCombustible(true)}
+        >
+          <Text style={styles.iconoFijo}>⛽</Text>
+          <Text style={styles.textoFijo}>Combustible</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* MODALES */}
+      <RegistroViajes
+        visible={mostrarRegistroViajes}
+        onGuardar={handleGuardarRegistro}
+        onCancelar={() => setMostrarRegistroViajes(false)}
+      />
+
+      <RegistroCombustible
+        visible={mostrarRegistroCombustible}
+        billeteras={billeteras}
+        onGuardar={handleGuardarCarga}
+        onCancelar={() => setMostrarRegistroCombustible(false)}
+      />
+
+      <RegistroIngresoGeneral
+        visible={mostrarRegistroIngreso}
+        billeteras={billeteras}
+        onGuardar={handleGuardarIngreso}
+        onCancelar={() => setMostrarRegistroIngreso(false)}
+      />
+
+      <RegistroGastoGeneral
+        visible={mostrarRegistroGasto}
+        billeteras={billeteras}
+        onGuardar={handleGuardarGasto}
+        onCancelar={() => setMostrarRegistroGasto(false)}
+      />
+    </SafeAreaView>
+  );
+}
+
+// ==================== ESTILOS ====================
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#f8f9fa',
+  },
+  // HEADER
+  appHeader: {
+    backgroundColor: '#fff',
+    paddingVertical: 20,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e9ecef',
+  },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  appTitle: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#2c3e50',
+  },
+  appSubtitle: {
+    fontSize: 14,
+    color: '#7f8c8d',
+    marginTop: 4,
+  },
+  botonReset: {
+    backgroundColor: '#ffeaea',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#e74c3c',
+  },
+  textoReset: {
+    fontSize: 14,
+    color: '#e74c3c',
+    fontWeight: '600',
+  },
+  // NAVEGACIÓN
+  navegacion: {
+    flexDirection: 'row',
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e9ecef',
+  },
+  botonNav: {
+    flex: 1,
+    paddingVertical: 16,
+    alignItems: 'center',
+  },
+  botonNavActivo: {
+    borderBottomWidth: 3,
+    borderBottomColor: '#3498db',
+  },
+  textoNav: {
+    fontSize: 16,
+    color: '#7f8c8d',
+    fontWeight: '600',
+  },
+  textoNavActivo: {
+    color: '#3498db',
+    fontWeight: 'bold',
+  },
+  // CONTENIDO
+  contenido: {
+    flex: 1,
+  },
+  // DASHBOARD
+  dashboardContainer: {
+    flex: 1,
+    padding: 16,
+  },
+  header: {
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  tituloPrincipal: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#2c3e50',
+  },
+  seccion: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 20,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  tituloSeccion: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#2c3e50',
+    marginBottom: 16,
+  },
+  // BILLETERAS HEADER
+  headerBilleteras: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  botonResetMini: {
+    backgroundColor: '#ffeaea',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: '#e74c3c',
+  },
+  textoResetMini: {
+    fontSize: 12,
+    color: '#e74c3c',
+    fontWeight: '600',
+  },
+  // BOTÓN 0 INDIVIDUAL
+  botonCero: {
+    backgroundColor: '#f8f9fa',
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#dfe6e9',
+  },
+  textoCero: {
+    fontSize: 12,
+    color: '#7f8c8d',
+    fontWeight: 'bold',
+  },
+  // TABLA - ESTRUCTURA CORREGIDA Y CENTRADA
+  tablaContainer: {
+    backgroundColor: '#f8f9fa',
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+  },
+  filaTabla: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#dfe6e9',
+  },
+  columnaHeader: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  columnaValor: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  encabezadoTabla: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#7f8c8d',
+  },
+  valorTotal: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#2c3e50',
+  },
+  valorNeto: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  porcentaje: {
+    fontSize: 14,
+    color: '#27ae60',
+    fontWeight: '600',
+  },
+  // PROYECCIONES
+  proyeccionCard: {
+    backgroundColor: '#ecf0f1',
+    borderRadius: 8,
+    padding: 16,
+  },
+  filaProyeccion: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  labelProyeccion: {
+    fontSize: 14,
+    color: '#7f8c8d',
+  },
+  valorProyeccion: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#2c3e50',
+  },
+  alertaProyeccion: {
+    backgroundColor: '#e3f2fd',
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#bbdefb',
+  },
+  mensajeProyeccion: {
+    fontSize: 14,
+    color: '#1976d2',
+    marginBottom: 4,
+  },
+  gananciaProyectada: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#27ae60',
+  },
+  // ACCIONES RÁPIDAS
+  gridAcciones: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  botonAccion: {
+    width: '48%',
+    backgroundColor: '#ecf0f1',
+    padding: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#dfe6e9',
+  },
+  iconoAccion: {
+    fontSize: 28,
+    marginBottom: 8,
+  },
+  textoAccion: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#3498db',
+  },
+  // BILLETERAS
+  listaBilleteras: {
+    gap: 12,
+  },
+  cardBilletera: {
+    backgroundColor: '#f8f9fa',
+    padding: 16,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+  },
+  billeteraNegativa: {
+    borderColor: '#e74c3c',
+    backgroundColor: '#fef2f2',
+  },
+  filaBilletera: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  iconoBilletera: {
+    fontSize: 28,
+    marginRight: 16,
+  },
+  infoBilletera: {
+    flex: 1,
+  },
+  nombreBilletera: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#2c3e50',
+    marginBottom: 4,
+  },
+  saldoBilletera: {
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  // ACCIONES FIJAS
+  accionesFijas: {
+    flexDirection: 'row',
+    backgroundColor: '#fff',
+    padding: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#e9ecef',
+  },
+  botonFijo: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    borderRadius: 10,
+    marginHorizontal: 8,
+  },
+  iconoFijo: {
+    fontSize: 20,
+    marginRight: 8,
+    color: '#fff',
+  },
+  textoFijo: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#fff',
+  },
+  // MODALES
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 20,
+    width: '90%',
+    maxHeight: '80%',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#2c3e50',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  botonFecha: {
+    backgroundColor: '#e3f2fd',
+    padding: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginBottom: 20,
+    borderWidth: 2,
+    borderColor: '#bbdefb',
+    borderStyle: 'dashed',
+  },
+  textoFecha: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1976d2',
+    marginBottom: 4,
+  },
+  textoCambiarFecha: {
+    fontSize: 12,
+    color: '#3498db',
+    textDecorationLine: 'underline',
+  },
+  label: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#2c3e50',
+    marginBottom: 8,
+    marginTop: 12,
+  },
+  listaApps: {
+    marginBottom: 12,
+  },
+  botonApp: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    backgroundColor: '#f8f9fa',
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+  },
+  botonAppSeleccionado: {
+    backgroundColor: '#3498db',
+    borderColor: '#3498db',
+  },
+  textoApp: {
+    fontSize: 14,
+    color: '#7f8c8d',
+  },
+  textoAppSeleccionado: {
+    color: '#fff',
+    fontWeight: '600',
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+    borderRadius: 8,
+    padding: 14,
+    fontSize: 16,
+    backgroundColor: '#fff',
+  },
+  inputCalculado: {
+    backgroundColor: '#f8f9fa',
+    color: '#7f8c8d',
+  },
+  filaInputs: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  inputMitad: {
+    width: '48%',
+  },
+  totalContainer: {
+    backgroundColor: '#ecf0f1',
+    padding: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginVertical: 20,
+  },
+  totalLabel: {
+    fontSize: 16,
+    color: '#7f8c8d',
+    marginBottom: 4,
+  },
+  totalValor: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#27ae60',
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 20,
+  },
+  botonCancelar: {
+    flex: 1,
+    padding: 16,
+    backgroundColor: '#e74c3c',
+    borderRadius: 8,
+    marginRight: 8,
+    alignItems: 'center',
+  },
+  botonGuardar: {
+    flex: 1,
+    padding: 16,
+    backgroundColor: '#27ae60',
+    borderRadius: 8,
+    marginLeft: 8,
+    alignItems: 'center',
+  },
+  botonConfirmar: {
+    flex: 1,
+    padding: 16,
+    backgroundColor: '#3498db',
+    borderRadius: 8,
+    marginLeft: 8,
+    alignItems: 'center',
+  },
+  botonTexto: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  // HISTORIAL - ESTILOS CORREGIDOS
+  historialContainer: {
+    flex: 1,
+    padding: 16,
+  },
+  headerHistorial: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  botonResetTodo: {
+    backgroundColor: '#ffeaea',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#e74c3c',
+  },
+  textoResetTodo: {
+    fontSize: 14,
+    color: '#e74c3c',
+    fontWeight: '600',
+  },
+  cardHistorial: {
+    backgroundColor: '#fff',
+    padding: 16,
+    borderRadius: 8,
+    marginBottom: 12,
+    borderLeftWidth: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  filaHistorial: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  infoHistorial: {
+    flex: 1,
+    marginRight: 12,
+  },
+  tituloHistorial: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#2c3e50',
+    marginBottom: 4,
+  },
+  fechaHistorial: {
+    fontSize: 12,
+    color: '#7f8c8d',
+  },
+  // CORRECCIÓN PRINCIPAL: CONTENEDOR DERECHA CON ESPACIO SUFICIENTE
+  derechaHistorial: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    minWidth: 120,
+    paddingLeft: 10,
+  },
+  montoHistorial: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginRight: 12,
+    minWidth: 90,
+    textAlign: 'right',
+  },
+  // BOTÓN DE ELIMINACIÓN MEJORADO
+  botonEliminarContainer: {
+    padding: 8,
+    backgroundColor: '#ffeaea',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#e74c3c',
+  },
+  botonEliminar: {
+    fontSize: 18,
+    color: '#e74c3c',
+  },
+  detallesViaje: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+  },
+  detallesCombustible: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+  },
+  detallesGeneral: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+  },
+  detalle: {
+    fontSize: 12,
+    color: '#7f8c8d',
+  },
+  listaHistorial: {
+    paddingBottom: 16,
+  },
+  vacioContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+  },
+  iconoVacio: {
+    fontSize: 48,
+    marginBottom: 16,
+    opacity: 0.5,
+  },
+  textoVacio: {
+    fontSize: 18,
+    color: '#7f8c8d',
+    marginBottom: 8,
+  },
+  subtextoVacio: {
+    fontSize: 14,
+    color: '#bdc3c7',
+    textAlign: 'center',
+  },
+});
