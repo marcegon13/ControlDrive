@@ -1,0 +1,104 @@
+GUÍA DE USUARIO Y FUNCIONALIDADES - CONTROL DRIVER APP
+======================================================
+
+¡Bienvenido a Control Driver!
+Esta aplicación está diseñada para ayudar a los conductores de plataformas (Uber, Didi, Cabify, etc.) a llevar un control preciso de sus finanzas, kilometraje y mantenimiento del vehículo.
+
+A continuación se detalla el contenido de la app y cómo utilizarla.
+
+------------------------------------------------------
+1. DIFERENCIAS ENTRE VERSIONES
+------------------------------------------------------
+
+La aplicación cuenta con dos versiones:
+
+A) Versión GRATUITA / PRUEBA (Trial)
+   - Funcionalidad: Tienes acceso a TODAS las herramientas de la app sin restricciones de uso.
+   - Publicidad: Incluye banners de publicidad en la pantalla principal.
+   - Duración: Esta versión tiene una FECHA DE CADUCIDAD (Vencimiento). 
+     Una vez alcanzada la fecha límite (ej. 1 de Marzo 2026), la app se bloqueará y dejará de funcionar hasta que se actualice a la versión Full.
+
+B) Versión PRO / FULL (Paga)
+   - Ilimitada: No tiene fecha de vencimiento. Es de uso de por vida.
+   - Sin Publicidad: Experiencia limpia sin anuncios.
+   - Soporte: Acceso a futuras actualizaciones y mejoras.
+
+------------------------------------------------------
+2. PRIMEROS PASOS (Configuración)
+------------------------------------------------------
+
+Al instalar la app, te recomendamos ir al menú "Configuración" (ícono ⚙️ arriba a la izquierda):
+
+1. Perfil del Vehículo:
+   - Ingresa la Marca, Modelo y Año.
+   - Tipo de Combustible (Nafta, GNC, Diesel, Híbrido) -> Esto es importante para los cálculos de consumo.
+   - Consumo Estimado: Ajusta si conoces tu consumo real.
+
+2. Seguridad:
+   - Puedes activar "Biometría" para que la app te pida tu Huella o FaceID al abrirla.
+
+3. Privacidad:
+   - "Ocultar Saldos" (ícono 👁️): Permite ocultar los montos en pantalla si estás con pasajeros.
+
+------------------------------------------------------
+3. PANTALLAS Y FUNCIONES PRINCIPALES
+------------------------------------------------------
+
+A. DASHBOARD (Pantalla Principal)
+   - Resumen del Día: Muestra cuánto ganaste, gastaste y tu ganancia neta (limpia) del día.
+   - Rendimiento (%): Te dice qué porcentaje de lo que ingresó es ganancia real.
+   - Rentabilidad/KM: Cuánto ganas por cada kilómetro recorrido.
+   - COMANDOS DE VOZ (Micrófono): Puedes preguntarle a la app:
+     * "¿Cuánto gané hoy?"
+     * "Resumen del mes"
+     * "Saldo de billeteras"
+
+B. ACCIONES RÁPIDAS (Botones de colores)
+   - ➕ Ingreso: Para anotar un viaje extra, propina o ingreso manual.
+   - ➖ Gasto: Para anotar gastos varios (comida, peajes, lavadero).
+   - 🚗 Viajes App: IMPORTANTE para el día a día. Aquí cargas el resumen que te dan las apps (Uber/Didi) al final del día o turno:
+     * Cantidad de viajes.
+     * Horas conectadas.
+     * Kilómetros recorridos.
+     * Ganancia total de la app.
+   - ⛽ Combustible: Para registrar cada carga. (Se descuenta de tu saldo y suma al gasto).
+
+C. BILLETERAS (Wallets)
+   - Gestiona tu dinero en diferentes lugares:
+     * Efectivo: Dinero en mano.
+     * Tarjetas/Plataforma: Dinero que queda en la app (Uber/Didi).
+     * Billeteras Virtuales: MercadoPago, Lemon, etc.
+   - La app suma y resta automáticamente de estas billeteras cuando cargas ingresos o gastos.
+
+D. VEHÍCULO
+   - Jornadas: Puedes dar "Iniciar Jornada" al salir a trabajar y "Finalizar Jornada" al volver. Esto te ayuda a calcular el tiempo exacto de trabajo.
+   - Mantenimiento: Podes anotar cambios de aceite, rotación de cubiertas, etc. La app guardará el kilometraje y fecha.
+
+E. HISTORIAL
+   - Aquí puedes ver lista de todo lo que cargaste.
+   - Si te equivocaste en algo, desliza hacia el costado o mantén presionado para ELIMINAR un registro.
+
+F. REPORTES
+   - En el Dashboard, abajo de todo, tienes el botón "Exportar Reporte Mensual".
+   - Esto genera un archivo Excel/CSV que puedes enviar por WhatsApp o Email para analizar en una computadora.
+
+------------------------------------------------------
+4. FLUJO DE TRABAJO RECOMENDADO
+------------------------------------------------------
+
+1. Al subir al auto: Abre la app y toca "Vehículo" -> "Iniciar Jornada".
+2. Durante el día:
+   - Ve cargando lo que ocurra: Si cargas nafta, usa el botón "Combustible". Si gastas efectivo, usa "Gasto".
+3. Al terminar el día (ANTES DE FINALIZAR JORNADA):
+   - Entra a tu app de conductor (Uber/Didi), mira el resumen del día.
+   - En Control Driver, usa el botón "Viajes App" y copia esos números (Ganancia, KM de app, Viajes).
+   - IMPORTANTE: Carga estos datos ANTES de cerrar la jornada en Control Driver. La app calcula el resumen del viaje usando los datos que ya están cargados en ese momento.
+4. Finalizar:
+   - Ve a "Vehículo" -> "Finalizar Jornada".
+   - La app te mostrará un resumen exacto con la rentabilidad de ese turno.
+   
+NOTA: Si cargas los datos DESPUÉS de finalizar la jornada, esos montos aparecerán correctamente en el "Resumen General del Día" (Dashboard), pero no aparecerán en el reporte individual de esa jornada finalizada.
+
+------------------------------------------------------
+¿Dudas?
+Consulta con el desarrollador para soporte o para adquirir la versión FULL.

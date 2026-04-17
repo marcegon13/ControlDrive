@@ -73,7 +73,7 @@ export const LocationManager = {
         return backgroundStatus === 'granted';
     },
 
-    async startTracking() {
+    async startTracking(resetData: boolean = true) {
         const isStarted = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME);
         if (isStarted) return;
 
@@ -88,7 +88,10 @@ export const LocationManager = {
             },
         });
 
-        await AsyncStorage.setItem('@current_jornada_km', '0');
+        if (resetData) {
+            await AsyncStorage.setItem('@current_jornada_km', '0');
+            await AsyncStorage.removeItem('@temp_location_data');
+        }
     },
 
     async stopTracking() {
@@ -100,5 +103,10 @@ export const LocationManager = {
         await AsyncStorage.removeItem('@temp_location_data');
         await AsyncStorage.removeItem('@current_jornada_km');
         return finalKmStr ? parseFloat(finalKmStr) : 0;
+    },
+
+    async getCurrentDistance() {
+        const currentKmStr = await AsyncStorage.getItem('@current_jornada_km');
+        return currentKmStr ? parseFloat(currentKmStr) : 0;
     }
 };

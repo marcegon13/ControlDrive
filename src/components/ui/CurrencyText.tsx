@@ -1,9 +1,9 @@
 // src/components/ui/CurrencyText.tsx
 import React from "react";
-import { Text, TextStyle, StyleProp } from "react-native";
+import { Text, TextStyle, StyleProp, TextProps } from "react-native";
 import { formatearMoneda } from "../../utils";
 
-interface CurrencyTextProps {
+interface CurrencyTextProps extends TextProps {
   amount: number;
   hideValue?: boolean;
   style?: StyleProp<TextStyle>;
@@ -15,7 +15,10 @@ export const CurrencyText: React.FC<CurrencyTextProps> = ({
   hideValue = false,
   style,
   prefix = "",
+  ...props
 }) => {
-  const content = hideValue ? "****" : `${prefix}${formatearMoneda(amount)}`;
-  return <Text style={style}>{content}</Text>;
+  // Sanitize prefix to ensure no "+" creeps in
+  const safePrefix = prefix && prefix.includes("+") ? prefix.replace("+", "") : prefix;
+  const content = hideValue ? "****" : `${safePrefix}${formatearMoneda(amount)}`;
+  return <Text style={style} {...props}>{content}</Text>;
 };

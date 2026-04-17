@@ -1,23 +1,29 @@
 // src/utils/index.ts
-import { RegistroDiario, CargaCombustible, Transaction } from "../types";
+import { RegistroDiario, CargaCombustible, Transaction, Jornada } from "../types";
 
 export const formatearFechaHora = (date: Date): string => {
-    if (!date || !(date instanceof Date) || isNaN(date.getTime())) {
+    let d = date;
+
+    // Si viene como string o no es instancia válida
+    if (!d || !(d instanceof Date) || isNaN(d.getTime())) {
         try {
-            // Intentar parsear si viene como string (desde JSON)
-            const d = new Date(date);
-            if (isNaN(d.getTime())) return "Fecha inválida";
-            date = d;
+            d = new Date(date);
         } catch {
             return "Fecha inválida";
         }
     }
+
+    // Última verificación
+    if (isNaN(d.getTime())) return "Fecha inválida";
+
     try {
-        return date.toLocaleString("es-AR", {
+        // Forzamos "es-AR" (Argentina) si es posible, o default
+        return d.toLocaleString("es-AR", {
             day: "2-digit",
             month: "short",
             hour: "2-digit",
             minute: "2-digit",
+            hour12: false // Formato 24hs para evitar confusiones
         }).replace(".", "");
     } catch (error) {
         return "Error fecha";
@@ -31,7 +37,8 @@ export const formatearMoneda = (monto: number): string => {
 export const calcularEstadisticasPorPeriodo = (
     registrosDiarios: RegistroDiario[],
     cargasCombustible: CargaCombustible[],
-    transactions: Transaction[]
+    transactions: Transaction[],
+    jornadas: Jornada[] = []
 ) => {
     const ahora = new Date();
     const hoy = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate());
@@ -66,11 +73,20 @@ export const calcularEstadisticasPorPeriodo = (
     const transactionsSemana = filterByDate(transactions, inicioSemana);
     const transactionsMes = filterByDate(transactions, inicioMes);
 
-    const calcStats = (regs: RegistroDiario[], cargas: CargaCombustible[], trans: Transaction[]) => {
+    const jornadasHoy = filterByDay(jornadas, hoy);
+    const jornadasSemana = filterByDate(jornadas, inicioSemana);
+    const jornadasMes = filterByDate(jornadas, inicioMes);
+
+    const calcStats = (regs: RegistroDiario[], cargas: CargaCombustible[], trans: Transaction[], tourneys: Jornada[]) => {
         const ingresosRegs = regs.reduce((sum, r) => sum + r.total, 0);
         const ingresosTrans = trans.filter(t => t.tipo === "ingreso").reduce((sum, t) => sum + t.monto, 0);
         const gastosCargas = cargas.reduce((sum, c) => sum + c.total, 0);
         const gastosTrans = trans.filter(t => t.tipo === "gasto").reduce((sum, t) => sum + t.monto, 0);
+
+        // Sumar KM de jornadas (usando totalKm si existe, sino diferencia inicio/fin)
+        const totalKm = tourneys.reduce((sum, j) => {
+            return sum + (j.totalKm || (j.kmFin ? j.kmFin - j.kmInicio : 0));
+        }, 0);
 
         const totalIngresos = ingresosRegs + ingresosTrans;
         const totalGastos = gastosCargas + gastosTrans;
@@ -79,13 +95,14 @@ export const calcularEstadisticasPorPeriodo = (
             ingresos: totalIngresos,
             gastos: totalGastos,
             neto: totalIngresos - totalGastos,
-            registros: regs.length + trans.length
+            registros: regs.length + trans.length,
+            km: totalKm
         };
     };
 
     return {
-        hoy: calcStats(registrosHoy, cargasHoy, transactionsHoy),
-        semana: calcStats(registrosSemana, cargasSemana, transactionsSemana),
-        mes: calcStats(registrosMes, cargasMes, transactionsMes),
+        hoy: calcStats(registrosHoy, cargasHoy, transactionsHoy, jornadasHoy),
+        semana: calcStats(registrosSemana, cargasSemana, transactionsSemana, jornadasSemana),
+        mes: calcStats(registrosMes, cargasMes, transactionsMes, jornadasMes),
     };
 };

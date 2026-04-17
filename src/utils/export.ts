@@ -1,4 +1,4 @@
-import * as FileSystem from 'expo-file-system/legacy';
+import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import { Alert, Platform } from 'react-native';
 import { RegistroDiario, CargaCombustible, Transaction } from '../types';
@@ -10,40 +10,65 @@ export const exportToCSV = async (
     transactions: Transaction[]
 ) => {
     try {
+        // Unificar datos en una lista cronológica
+        const inputData = [
+            ...registros.map(r => ({
+                fecha: new Date(r.fecha),
+                tipo: "Jornada",
+                categoria: r.app,
+                detalle: `Efec: ${r.efectivo} | Tarj: ${r.tarjetas} | Virt: ${r.billeterasVirtuales}`,
+                ingreso: r.total,
+                gasto: 0
+            })),
+            ...cargas.map(c => ({
+                fecha: new Date(c.fecha),
+                tipo: "Combustible",
+                categoria: c.estacion,
+                detalle: `${c.litros}L @ $${c.precioPorLitro}`,
+                ingreso: 0,
+                gasto: c.total
+            })),
+            ...transactions.map(t => ({
+                fecha: new Date(t.fecha),
+                tipo: t.tipo === "transferencia" ? "Transferencia" : (t.tipo === "ingreso" ? "Extra" : "Gasto"),
+                categoria: "General",
+                detalle: (t.descripcion || "").replace(/"/g, '""'),
+                ingreso: t.tipo === "ingreso" ? t.monto : 0,
+                gasto: t.tipo === "gasto" ? t.monto : 0
+            }))
+        ].sort((a, b) => b.fecha.getTime() - a.fecha.getTime());
+
         // BOM para forzar UTF-8 en Excel
-        let csvContent = "\ufeffREPORTE DE CONTROL DRIVER\n\n";
+        let csvContent = "\ufeff";
 
-        // 1. Registros Diarios
-        csvContent += "--- REGISTROS DIARIOS ---\n";
-        csvContent += "Fecha,App,Efectivo,Tarjetas,Billeteras,Total\n";
-        registros.forEach(r => {
-            csvContent += `${formatearFechaHora(new Date(r.fecha))},${r.app},${r.efectivo},${r.tarjetas},${r.billeterasVirtuales},${r.total}\n`;
-        });
+        // Header Unificado (usando ; para Excel Latam)
+        csvContent += "Fecha;Hora;Tipo;Categoria;Detalle;Ingreso;Gasto;Neto\n";
 
-        csvContent += "\n--- CARGAS DE COMBUSTIBLE ---\n";
-        csvContent += "Fecha,Estacion,Litros,P/Litro,Total\n";
-        cargas.forEach(c => {
-            csvContent += `${formatearFechaHora(new Date(c.fecha))},${c.estacion},${c.litros},${c.precioPorLitro},${c.total}\n`;
-        });
+        inputData.forEach(item => {
+            const f = item.fecha;
+            const fechaStr = `${f.getDate().toString().padStart(2, '0')}/${(f.getMonth() + 1).toString().padStart(2, '0')}/${f.getFullYear()}`;
+            const horaStr = `${f.getHours().toString().padStart(2, '0')}:${f.getMinutes().toString().padStart(2, '0')}`;
 
-        csvContent += "\n--- OTRAS TRANSACCIONES ---\n";
-        csvContent += "Fecha,Tipo,Monto,Descripcion\n";
-        transactions.forEach(t => {
-            csvContent += `${formatearFechaHora(new Date(t.fecha))},${t.tipo},${t.monto},"${(t.descripcion || "").replace(/"/g, '""')}"\n`;
+            // Helper para formatear números a "1.234,56" (Excel Latam)
+            const fmtNum = (n: number) => n.toString().replace('.', ',');
+
+            const tipo = `"${item.tipo}"`;
+            const cat = `"${item.categoria}"`;
+            const det = `"${item.detalle.replace(/"/g, '""')}"`; // Escapar comillas dobles
+
+            const ing = fmtNum(item.ingreso);
+            const gas = fmtNum(item.gasto);
+            const net = fmtNum(item.ingreso - item.gasto);
+
+            csvContent += `${fechaStr};${horaStr};${tipo};${cat};${det};${ing};${gas};${net}\n`;
         });
 
         const fileName = `ControlDriver_Reporte_${new Date().getTime()}.csv`;
-
-        // Usar CacheDirectory ("legacy" properties might need casting if types are missing)
         const fs = FileSystem as any;
         const fileUri = (fs.cacheDirectory || fs.documentDirectory) + fileName;
 
-        // Escribir el archivo
-        await FileSystem.writeAsStringAsync(fileUri, csvContent, {
-            encoding: 'utf8'
-        });
+        await FileSystem.writeAsStringAsync(fileUri, csvContent, { encoding: 'utf8' });
 
-        // Verificar si se puede compartir
         const isSharingAvailable = await Sharing.isAvailableAsync();
 
         if (isSharingAvailable) {
@@ -58,7 +83,6 @@ export const exportToCSV = async (
 
     } catch (error) {
         console.error("Error exportando CSV:", error);
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        Alert.alert("Error", `No se pudo generar el reporte.\nDetalle: ${errorMessage}`);
+        Alert.alert("Error", "No se pudo generar el reporte.");
     }
 };

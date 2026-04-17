@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "Control Driver TEST",
-    "slug": "control-driver-test",
+    "name": "Control Driver",
+    "slug": "control-driver",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -10,8 +10,12 @@
       "resizeMode": "cover",
       "backgroundColor": "#2c3e50"
     },
+    "updates": {
+      "enabled": false,
+      "checkAutomatically": "ON_LOAD"
+    },
     "android": {
-      "package": "com.marce013.controldriver.test",
+      "package": "com.marce013.controldriver",
       "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
@@ -25,8 +29,10 @@
         "FOREGROUND_SERVICE_LOCATION",
         "USE_BIOMETRIC",
         "USE_FINGERPRINT",
-        "WAKE_LOCK"
-      ]
+        "WAKE_LOCK",
+        "RECORD_AUDIO"
+      ],
+      "googleServicesFile": "./google-services.json"
     },
     "ios": {
       "supportsTablet": true,
@@ -36,13 +42,14 @@
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Control Driver necesita rastrear tu ubicación en segundo plano para registrar tus recorridos incluso cuando la app no está abierta.",
         "NSLocationAlwaysUsageDescription": "Permite que Control Driver registre tus kilómetros recorridos de forma automática.",
         "NSFaceIDUsageDescription": "Usa FaceID para proteger el acceso a tus datos financieros."
-      },
-      "UIBackgroundModes": ["location", "fetch"]
+      }
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "extra": {
       "eas": {
         "projectId": "a0a943f4-3ba3-4132-9469-2a2c388a143d"
@@ -57,6 +64,20 @@
         }
       ],
       "expo-local-authentication",
+      "@react-native-firebase/app",
+      [
+        "@react-native-firebase/crashlytics",
+        {
+          "isCrashlyticsCollectionEnabled": true
+        }
+      ],
+      [
+        "react-native-google-mobile-ads",
+        {
+          "androidAppId": "ca-app-pub-3940256099942544~3347511713",
+          "iosAppId": "ca-app-pub-3940256099942544~1458002511"
+        }
+      ],
       [
         "expo-build-properties",
         {
@@ -64,7 +85,9 @@
             "compileSdkVersion": 35,
             "targetSdkVersion": 35,
             "buildToolsVersion": "35.0.0",
-            "minSdkVersion": 24
+            "minSdkVersion": 24,
+            "newArchEnabled": false,
+            "hermesEnabled": false
           }
         }
       ]

@@ -22,6 +22,16 @@ export const INITIAL_PRO_SETTINGS = {
     biometricEnabled: false,
     hideBalances: false,
     darkMode: false,
+    vehicleProfile: {
+        brand: "",
+        model: "",
+        year: "",
+        engineDisplacement: "1.6",
+        fuelType: "nafta" as "nafta" | "gnc" | "diesel" | "hibrido",
+        transmission: "manual" as "manual" | "automatico",
+        acEnabled: false,
+    },
+    weeklyGoal: 200000, // Default 200k
 };
 
 export const APPS_DISPONIBLES = ["Didi", "Uber", "Cabify", "Beat", "Particular", "Varias Apps"];
@@ -34,3 +44,7 @@ export const APP_LOGOS: Record<string, any> = {
     "Billeteras Virtuales": require("../../assets/mercadopago.png"),
     "Tarjetas/Plataforma": require("../../assets/uber.png"), // Por defecto Uber/Didi si es plataforma
 };
+
+// --- TRIAL VERSION CONFIG ---
+export const IS_TRIAL_VERSION = false;
+export const TRIAL_EXPIRATION_DATE = new Date("2026-03-01T00:00:00"); 

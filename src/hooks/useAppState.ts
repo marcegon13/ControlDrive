@@ -4,7 +4,7 @@ import { Alert } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
     Billetera, RegistroDiario, CargaCombustible, Transaction,
-    TransactionType, ScreenType, ProSettings, Jornada, Mantenimiento
+    TransactionType, ScreenType, ProSettings, Jornada, Mantenimiento, JornadaSummary
 } from "../types";
 import { STORAGE_KEYS, INITIAL_BILLETERAS, INITIAL_PRO_SETTINGS } from "../constants";
 import { LocationManager } from "../services/locationManager";
@@ -25,20 +25,14 @@ export const useAppState = () => {
     const [registroDiarioModalVisible, setRegistroDiarioModalVisible] = useState(false);
     const [cargaCombustibleModalVisible, setCargaCombustibleModalVisible] = useState(false);
     const [transactionModalVisible, setTransactionModalVisible] = useState(false);
+    const [resumenJornadaModalVisible, setResumenJornadaModalVisible] = useState(false);
+    const [mantenimientoModalVisible, setMantenimientoModalVisible] = useState(false);
+    const [jornadaSummary, setJornadaSummary] = useState<JornadaSummary | null>(null);
+
     const [transactionModalType, setTransactionModalType] = useState<TransactionType | null>(null);
     const [selectedWalletId, setSelectedWalletId] = useState<string | null>(null);
 
-    // Cargar datos al iniciar
-    useEffect(() => {
-        loadData();
-    }, []);
-
-    // Guardar datos cuando cambian
-    useEffect(() => {
-        if (!isLoading) {
-            saveData();
-        }
-    }, [billeteras, registrosDiarios, cargasCombustible, transactions, jornadas, mantenimientos, proSettings, isLoading]);
+    // ... loadData and saveData (omitted for brevity) ...
 
     const loadData = async () => {
         try {
@@ -96,6 +90,19 @@ export const useAppState = () => {
         }
     };
 
+
+    // Cargar datos al montar el componente
+    useEffect(() => {
+        loadData();
+    }, []);
+
+    // Guardar datos automáticamente cuando cambia el estado
+    useEffect(() => {
+        if (!isLoading) {
+            saveData();
+        }
+    }, [billeteras, registrosDiarios, cargasCombustible, transactions, jornadas, mantenimientos, proSettings]);
+
     const updateProSettings = (newSettings: Partial<ProSettings>) => {
         setProSettings(prev => ({ ...prev, ...newSettings }));
     };
@@ -119,26 +126,162 @@ export const useAppState = () => {
         Alert.alert("🚀 Jornada Iniciada", `Kilometraje inicial: ${kmInicio} km`);
     };
 
-    const handleEndJornada = async (id: string, kmFin: number) => {
-        const gpsKm = await LocationManager.stopTracking();
+    const calculateJornadaStats = (jornada: Jornada, endTime: Date = new Date()): JornadaSummary => {
+        const startTime = new Date(jornada.fecha);
+        // If the jornada is finished, we should probably use a stored end time or assume the next jornada start? 
+        // For now, if it's finished but we don't have an explicit end date stored in Jornada, 
+        // we might be estimating.
+        // Actually, for viewing past jornadas, we need to know when it ended.
+        // The current Jornada interface doesn't store explicit 'fechaFin'. 
+        // Limitation: We will assume it ends when the next jornada starts OR 
+        // if it's the last one, use current time?
+        // Wait, for 'handleEnd', we have 'endTime'. 
+        // For historical calculation, we might need to improve 'Jornada' type to store 'fechaFin'.
 
+        // Let's rely on what we have. If we are just calculating for the "End Shift" event, we have endTime.
+        // If we are viewing history, we might run into overlap issues. 
+        // BETTER APPROACH FOR HISTORY: 
+        // Store the snapshot in the Jornada object. 
+        // It's safer to snapshot the summary when closing the shift, 
+        // because "dynamic recalculation" is hard without a fixed 'fechaFin'.
+
+        // BUT, the user wants to see it *now* for existing data.
+        // Existing data doesn't have the snapshot.
+
+        // Alternative: For viewing history, we can approximate 'endTime'.
+        // If it is 'finalizada', check the date of the NEXT jornada or just assume a reasonable shift length?
+        // Or better: Update 'Jornada' type to include 'summary' and 'fechaFin'.
+
+        // Since I cannot migrate existing data easily without risk, I will implement a hybrid:
+        // 1. Refactor 'handleEndJornada' to SAVE the summary and endTime in the Jornada object.
+        // 2. For old jornadas (without summary), I will show a "Data not available" or try to calculate.
+
+        // Let's stick to the extraction first.
+        return {
+            duracionHoras: 0,
+            totalKm: 0,
+            ingresos: 0,
+            gastos: 0,
+            gananciaNeta: 0,
+            rentabilidadPorKm: 0,
+            kmApps: 0,
+            kmMuertos: 0
+        }
+    };
+
+    const handleEndJornada = async (id: string, kmFin: number) => {
+        try {
+            await LocationManager.stopTracking();
+        } catch (e) {
+            console.log("Error stopping GPS:", e);
+        }
+
+        const endTime = new Date();
+
+        const jornada = jornadas.find(j => j.id === id);
+        if (!jornada) return;
+
+        const startTime = new Date(jornada.fecha);
+        const totalKm = kmFin - jornada.kmInicio;
+
+        if (totalKm < 0) {
+            Alert.alert("❌ Error", "El kilometraje final no puede ser menor al inicial.");
+            return;
+        }
+
+        const duracionMs = endTime.getTime() - startTime.getTime();
+        const duracionHoras = parseFloat((duracionMs / (1000 * 60 * 60)).toFixed(2));
+
+        // Buffer de 1 hora antes y después para capturar gastos e ingresos cercanos
+        const searchStartTime = new Date(startTime.getTime() - 60 * 60 * 1000);
+        const searchEndTime = new Date(endTime.getTime() + 60 * 60 * 1000);
+
+        // Filtrar Ingresos (usando buffer)
+        const ingresosRegistros = registrosDiarios
+            .filter(r => r.fecha >= searchStartTime && r.fecha <= searchEndTime)
+            .reduce((sum, r) => sum + r.total, 0);
+
+        const ingresosTransacciones = transactions
+            .filter(t => t.tipo === "ingreso" && t.fecha >= searchStartTime && t.fecha <= searchEndTime)
+            .reduce((sum, t) => sum + t.monto, 0);
+
+        const totalIngresos = ingresosRegistros + ingresosTransacciones;
+
+        const gastosCombustible = cargasCombustible
+            .filter(c => c.fecha >= searchStartTime && c.fecha <= searchEndTime)
+            .reduce((sum, c) => sum + c.total, 0);
+
+        const gastosTransacciones = transactions
+            .filter(t => t.tipo === "gasto" && t.fecha >= searchStartTime && t.fecha <= searchEndTime)
+            .reduce((sum, t) => sum + t.monto, 0);
+
+        // Sumar KM de Apps (reportados manualmente)
+        const kmApps = registrosDiarios
+            .filter(r => r.fecha >= searchStartTime && r.fecha <= searchEndTime)
+            .reduce((sum, r) => sum + (r.kmApps || 0), 0);
+
+        const kmMuertos = parseFloat((totalKm - kmApps).toFixed(2));
+
+        const totalGastos = gastosCombustible + gastosTransacciones;
+        const gananciaNeta = totalIngresos - totalGastos;
+        const rentabilidadPorKm = totalKm > 0 ? gananciaNeta / totalKm : 0;
+
+        const summary: JornadaSummary = {
+            duracionHoras,
+            totalKm,
+            ingresos: totalIngresos,
+            gastos: totalGastos,
+            gananciaNeta,
+            rentabilidadPorKm,
+            kmApps,
+            kmMuertos
+        };
+
+        // SAVE SNAPSHOT in Jornada!
         setJornadas(prev => prev.map(j => {
             if (j.id === id) {
-                const totalKm = kmFin - j.kmInicio;
-                if (totalKm < 0) {
-                    Alert.alert("❌ Error", "El kilometraje final no puede ser menor al inicial.");
-                    return j;
-                }
-
-                if (gpsKm > 0) {
-                    console.log(`KM Calculado por GPS: ${gpsKm.toFixed(2)} km`);
-                }
-
-                return { ...j, kmFin, totalKm: parseFloat(totalKm.toFixed(2)), finalizada: true };
+                return {
+                    ...j,
+                    kmFin,
+                    totalKm: parseFloat(totalKm.toFixed(2)),
+                    finalizada: true,
+                    // Persist for history viewing
+                    summary,
+                    fechaFin: endTime
+                };
             }
             return j;
         }));
-        Alert.alert("🏁 Jornada Finalizada", "Se ha registrado el kilometraje final.");
+
+        setJornadaSummary(summary);
+        setResumenJornadaModalVisible(true);
+    };
+
+    const handleCancelJornada = async (id: string) => {
+        // Stop GPS if running
+        await LocationManager.stopTracking();
+
+        // Remove the jornada from state
+        setJornadas(prev => prev.filter(j => j.id !== id));
+
+        Alert.alert("Jornada Cancelada", "El conteo de GPS se ha detenido y el registro se eliminó.");
+    };
+
+    const handleViewJornada = (jornada: Jornada) => {
+        if ((jornada as any).summary) {
+            setJornadaSummary((jornada as any).summary);
+            setResumenJornadaModalVisible(true);
+        } else {
+            // Fallback for old data or if logic changes
+            // Construct a basic summary or Recalculate if possible?
+            // Without 'fechaFin', exact recalc is hard. 
+            // We'll show a basic alert or partial info.
+            if (jornada.finalizada) {
+                Alert.alert("Detalle no disponible", "Los datos detallados de esta jornada histórica no se guardaron (versión anterior).");
+            } else {
+                Alert.alert("En curso", "Esta jornada aún no ha finalizado.");
+            }
+        }
     };
 
     // --- MANEJO DE MANTENIMIENTO ---
@@ -155,6 +298,7 @@ export const useAppState = () => {
         ));
 
         Alert.alert("✅ Éxito", "Registro de mantenimiento guardado.");
+        setMantenimientoModalVisible(false);
     };
 
     const handleDeleteMantenimiento = (id: string) => {
@@ -190,6 +334,7 @@ export const useAppState = () => {
                 })
             );
             Alert.alert("✅ Éxito", "Registro guardado correctamente");
+            setRegistroDiarioModalVisible(false);
         } catch (error) {
             Alert.alert("❌ Error", "No se pudo guardar el registro");
         }
@@ -204,6 +349,7 @@ export const useAppState = () => {
                 prev.map((b) => (b.id === data.billeteraId ? { ...b, saldo: b.saldo - data.total } : b))
             );
             Alert.alert("✅ Éxito", "Carga de combustible guardada");
+            setCargaCombustibleModalVisible(false);
         } catch (error) {
             Alert.alert("❌ Error", "No se pudo guardar la carga");
         }
@@ -313,6 +459,9 @@ export const useAppState = () => {
             registroDiarioModalVisible,
             cargaCombustibleModalVisible,
             transactionModalVisible,
+            resumenJornadaModalVisible,
+            mantenimientoModalVisible,
+            jornadaSummary,
             transactionModalType,
             selectedWalletId,
         },
@@ -321,11 +470,15 @@ export const useAppState = () => {
             setRegistroDiarioModalVisible,
             setCargaCombustibleModalVisible,
             setTransactionModalVisible,
+            setResumenJornadaModalVisible,
+            setMantenimientoModalVisible,
             setTransactionModalType,
             setSelectedWalletId,
             updateProSettings,
             handleStartJornada,
             handleEndJornada,
+            handleCancelJornada,
+            handleViewJornada,
             handleSaveMantenimiento,
             handleDeleteMantenimiento,
             handleSaveRegistroDiario,

@@ -1,0 +1,40 @@
+**ROL:** Eres un Ingeniero de Software Senior y Product Manager experto en Apps Móviles.
+
+**⚠️ REGLA DE ORO (CRÍTICA):** 
+**NO ROMPER LA FUNCIONALIDAD ACTUAL.**
+El flujo actual (Start GPS -> Conducir -> Cargar Gastos -> Stop GPS) es SAGRADO y ya está validado.
+Si alguna de las mejoras que se proponen a continuación requiere modificar la lógica central de `useAppState`, `LocationManager` o el cálculo de `handleEndJornada`, **DETENTE INMEDIATAMENTE** y consulta al usuario antes de proceder. No asumas que un cambio "pequeño" es seguro.
+
+---
+
+**OBJETIVO DEL SPRINT:** 
+Llevar a Control Driver a un nivel "World Class" agregando funcionalidades premium y puliendo la UX, pero manteniendo la estabilidad actual al 100%.
+
+**DESAFÍO DE MEJORAS (Propuestas a evaluar e implementar):**
+
+1.  **METAS Y OBJETIVOS (Gamification):**
+    *   *Idea:* Permitir al usuario establecer una "Meta Semanal" (ej: $200.000).
+    *   *Implementación:* Barra de progreso visual en el Dashboard.
+    *   *Riesgo:* BAJO. Solo requiere lectura de datos existentes y una nueva key de almacenamiento para la meta.
+
+2.  **ANÁLISIS DE COMPETENCIA (Benchmark: Gridwise, Stride):**
+    *   *Mejora Fiscal:* Agregar una opción simple al exportar Excel para marcar kilómetros como "Deducibles" vs "Personales" (si aplica).
+    *   *Histórico Inteligente:* Mostrar en el Dashboard un pequeño aviso: "Tu mejor día suele ser el Viernes". (Análisis de solo lectura de `jornadas`).
+
+3.  **UI/UX PREMIUM (Look & Feel):**
+    *   *Feedback Háptico:* Agregar vibración suave (Haptics) al pulsar botones importantes (Iniciar Jornada, Guardar Gasto).
+    *   *Animaciones:* Suavizar la entrada de modales y la transición de números (conteo progresivo en los saldos).
+    *   *Modo "Discreto" Mejorado:* Que el botón de ocultar saldos (el ojo) también oculte los montos de las notificaciones o resúmenes si están visibles.
+
+4.  **ONBOARDING PARA EL FLUJO CORRECTO:**
+    *   *Problema:* Los usuarios nuevos pueden cerrar el GPS antes de cargar los gastos.
+    *   *Solución:* Al presionar "Finalizar Jornada", mostrar un *checklist* o alerta confirmatoria: "¿Ya cargaste los gastos de Apps y Combustible de este viaje? Si cierras ahora, no se incluirán en este reporte."
+
+**INSTRUCCIONES DE EJECUCIÓN:**
+1.  Lee el código actual y entiende el flujo de `handleEndJornada`.
+2.  Si vas a implementar el "Meta Semanal", crea un componente aislado que se integre en `DashboardScreen` sin tocar la lógica de ingresos.
+3.  Si vas a implementar la alerta de cierre, asegúrate de que sea solo una capa de UI (Alert) y no cambie el cálculo matemático.
+
+**ENTREGABLE:**
+- Código modificado con las mejoras.
+- Garantía de que el APK resultante sigue calculando la rentabilidad exactamente igual que hoy.

@@ -1,10 +1,9 @@
-// src/components/modals/TransactionModal.tsx
 import React, { useState, useEffect } from "react";
-import { View, Text, Modal, TouchableOpacity, TextInput, StyleSheet, Alert } from "react-native";
-import { Billetera, TransactionType } from "../../types";
-import { CustomPicker } from "../ui/CustomPicker";
-import { DateSelector } from "../ui/DateSelector";
-import { COLORS } from "../../theme/colors";
+import { View, Text, TextInput, TouchableOpacity, Modal, Alert } from "react-native";
+import { Transaction, TransactionType, Billetera } from "../../types";
+import CustomPicker from "../CustomPicker";
+import DateSelector from "../DateSelector";
+import { globalStyles } from "../../styles";
 
 interface TransactionModalProps {
   modalVisible: boolean;
@@ -15,7 +14,7 @@ interface TransactionModalProps {
   handleSaveTransaction: (data: any) => Promise<void>;
 }
 
-export const TransactionModal: React.FC<TransactionModalProps> = ({
+const TransactionModal: React.FC<TransactionModalProps> = ({
   modalVisible,
   modalType,
   selectedWalletId,
@@ -49,7 +48,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       return;
     }
 
-    if (parsedMonto > 100000) { // Ajustado a valor más realista para confirmación
+    if (parsedMonto > 10000) {
       Alert.alert(
         "Confirmar Transacción Grande",
         `¿Estás seguro de registrar $${parsedMonto}?`,
@@ -68,7 +67,6 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                 fecha: fecha,
               });
               setGuardando(false);
-              handleCloseModal();
             },
           },
         ]
@@ -86,7 +84,6 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       fecha: fecha,
     });
     setGuardando(false);
-    handleCloseModal();
   };
 
   const isTransferencia = modalType === "transferencia";
@@ -94,16 +91,16 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
 
   return (
     <Modal visible={modalVisible} transparent animationType="slide">
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContent}>
-          <Text style={styles.modalTitle}>{title}</Text>
-          
+      <View style={globalStyles.modalOverlay}>
+        <View style={globalStyles.modalContent}>
+          <Text style={globalStyles.modalTitle}>{title}</Text>
+
           <DateSelector date={fecha} onDateChange={setFecha} />
 
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>Monto ($)</Text>
+          <View style={globalStyles.inputContainer}>
+            <Text style={globalStyles.label}>Monto ($)</Text>
             <TextInput
-              style={styles.input}
+              style={globalStyles.input}
               value={monto}
               onChangeText={setMonto}
               keyboardType="numeric"
@@ -133,26 +130,26 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
             />
           )}
 
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>Descripción</Text>
+          <View style={globalStyles.inputContainer}>
+            <Text style={globalStyles.label}>Descripción</Text>
             <TextInput
-              style={styles.input}
+              style={globalStyles.input}
               value={descripcion}
               onChangeText={setDescripcion}
               placeholder="Opcional"
             />
           </View>
 
-          <View style={styles.modalButtons}>
-            <TouchableOpacity style={styles.cancelButton} onPress={handleCloseModal}>
-              <Text style={styles.buttonTextSecondary}>Cancelar</Text>
+          <View style={globalStyles.modalButtons}>
+            <TouchableOpacity style={globalStyles.cancelButton} onPress={() => handleCloseModal()}>
+              <Text style={globalStyles.buttonTextSecondary}>Cancelar</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.saveButton, guardando && styles.disabledButton]}
+              style={[globalStyles.saveButton, guardando && globalStyles.disabledButton]}
               onPress={handleSubmit}
               disabled={guardando}
             >
-              <Text style={styles.buttonTextPrimary}>
+              <Text style={globalStyles.buttonTextPrimary}>
                 {guardando ? "Guardando..." : "Guardar"}
               </Text>
             </TouchableOpacity>
@@ -163,77 +160,4 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: COLORS.overlay,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  modalContent: {
-    backgroundColor: COLORS.white,
-    borderRadius: 12,
-    padding: 20,
-    width: "90%",
-    maxHeight: "80%",
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: "bold",
-    marginBottom: 20,
-    textAlign: "center",
-    color: COLORS.dark,
-  },
-  inputContainer: {
-    marginBottom: 16,
-  },
-  label: {
-    fontSize: 16,
-    fontWeight: "600",
-    marginBottom: 8,
-    color: COLORS.dark,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: COLORS.lightGray,
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    backgroundColor: COLORS.white,
-  },
-  modalButtons: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 20,
-  },
-  cancelButton: {
-    flex: 1,
-    padding: 16,
-    backgroundColor: COLORS.danger,
-    borderRadius: 8,
-    marginRight: 8,
-    alignItems: "center",
-  },
-  saveButton: {
-    flex: 1,
-    padding: 16,
-    backgroundColor: COLORS.primary,
-    borderRadius: 8,
-    marginLeft: 8,
-    alignItems: "center",
-  },
-  buttonTextPrimary: {
-    color: COLORS.white,
-    fontSize: 16,
-    fontWeight: "bold",
-  },
-  buttonTextSecondary: {
-    color: COLORS.white,
-    fontSize: 16,
-    fontWeight: "bold",
-  },
-  disabledButton: {
-    backgroundColor: COLORS.lightGray,
-    opacity: 0.7,
-  },
-});
+export default TransactionModal;
